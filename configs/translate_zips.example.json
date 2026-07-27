@@ -1,0 +1,20 @@
+{
+  "dataset_registry": "/config/datasets.json",
+  "datasets": [
+    "okvqa",
+    {
+      "name": "captcha",
+      "chinese_ratio": 1.0,
+      "limit": 5000
+    }
+  ],
+  "output_jsonl": "/output/train.jsonl",
+  "chinese_ratio": 0.7,
+  "seed": 42,
+  "limit_per_dataset": null,
+  "backend_config": "/config/backend_config.json",
+  "sample_prompt_file": "/prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "/prompts/translate_utterance_zh.txt",
+  "emit_raw": true,
+  "resume": true
+}

@@ -1,0 +1,7 @@
+{
+  "dataset_registry": "configs/datasets.json",
+  "datasets": ["*"],
+  "output_jsonl": "output/train_en.jsonl",
+  "limit_per_dataset": null,
+  "resume": true
+}

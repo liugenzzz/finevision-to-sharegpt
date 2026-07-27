@@ -1,0 +1,416 @@
+# finevision-to-sharegpt
+
+`finevision-to-sharegpt` 是一个容器优先的 Python 命令行工具，用于把 FineVision 风格的 `zip/parquet` 数据包或已有 ShareGPT JSON/JSONL 转换成 LLaMA-Factory 兼容的 ShareGPT 多模态训练数据。
+
+当前主路径是三个配置化流水线，另有一个直接使用参数的合并命令：
+
+1. `translate-json`：翻译已有英文 ShareGPT JSON/JSONL。
+2. `translate-zips`：从注册的 zip/parquet 数据集中抽取样本，并按比例生成中文翻译样本和英文原样样本。
+3. `export-zips`：从注册的 zip/parquet 数据集中抽取样本，不调用模型，直接导出英文 ShareGPT。
+4. `merge`：按输入顺序合并中间 JSONL，并按 `id` 保留首次出现的记录。
+
+详细运行说明见 [docs/运行说明.md](docs/运行说明.md)。
+
+## 主要特性
+
+- 支持单图和多图样本。
+- 支持输出 JSONL 和 JSON 数组。
+- 支持已有 JSON 翻译断点续跑。
+- 支持 zip/parquet 流式读取，避免全量加载数据集。
+- 支持多线程、多卡、多模型、多 backend 固定并发翻译。
+- 支持运行时进度条，显示 processed/written/failed/skipped 等统计。
+- 支持 backend 请求超时、重试、连续失败后临时禁用。
+- 支持数据集注册表，zip 任务只需要写数据集名字。
+- zip 抽取图片按数据集分目录保存：`images/<dataset_name>/<hash>.<ext>`。
+- `translate-zips` 默认保留每个数据集翻译前的 `raw.jsonl` 中间层。
+- 支持稳定合并多个 JSONL，同时生成 JSONL 和 JSON 数组。
+- 已有 JSON 翻译不复制图片、不改 `images` 路径。
+
+## 输出格式
+
+输出记录使用 ShareGPT 多模态格式：
+
+```json
+{
+  "id": "okvqa:nested/part.parquet:0",
+  "images": [
+    "images/okvqa/abc123.jpg",
+    "images/okvqa/def456.png"
+  ],
+  "conversations": [
+    {
+      "from": "human",
+      "value": "<image>\n<image>\n问题"
+    },
+    {
+      "from": "gpt",
+      "value": "答案"
+    }
+  ]
+}
+```
+
+多图规则：
+
+- `images` 数组里有几张图，第一条 human 里就插入几个 `<image>`。
+- `<image>` token 连续放在第一条 human 开头。
+- 单图样本仍然是一个 `<image>`。
+
+## 构建镜像
+
+```bash
+docker build -t finevision-to-sharegpt:latest .
+```
+
+导出镜像：
+
+```bash
+docker save finevision-to-sharegpt:latest -o finevision-to-sharegpt_latest.tar
+```
+
+导入镜像：
+
+```bash
+docker load -i finevision-to-sharegpt_latest.tar
+```
+
+运行阶段不会下载数据集。翻译功能只需要能访问你配置的内网大模型接口。
+
+## 怎么运行
+
+**两步：改配置 → 跑脚本。** 不用 `cd`、不用 `export`、不用装包，脚本全帮你处理好了。
+
+1. 改 `configs/` 下对应的配置文件（见下方各功能说明）。
+2. 跑对应脚本，无参即可：
+
+```bash
+bash scripts/in_translate_json.sh   # 翻译已有 JSON   → 读 configs/translate_json.json
+bash scripts/in_translate_zips.sh   # 解压+按比例翻译 → 读 configs/translate_zips.json
+bash scripts/in_export_zips.sh      # 解压+直接导出   → 读 configs/export_zips.json
+```
+
+就这样。想临时换个配置，把路径当第一个参数传进去：`bash scripts/in_translate_zips.sh 别的配置.json`。
+
+<details>
+<summary>脚本背后做了什么 / 不想用脚本怎么办</summary>
+
+脚本会自动 `cd` 到项目根目录、设置 `PYTHONPATH=src`、再用 `python -m finevision_to_sharegpt <命令>` 调起，所以你不需要手动配环境。配置里的相对路径都相对项目根解析。
+
+如果你想直接敲命令（容器里包已装好，可直接用；裸 checkout 则先 `pip install -e .` 或自行 `export PYTHONPATH=src`）：
+
+```bash
+python -m finevision_to_sharegpt translate-zips --config configs/translate_zips.json
+```
+
+</details>
+
+## 公共配置
+
+### backend 配置
+
+涉及翻译的功能都需要 backend 配置，直接编辑：
+
+```text
+configs/backend_config.json
+```
+
+填入你的接口地址和 key。示例：
+
+```json
+{
+  "request_timeout": 120,
+  "max_retries": 2,
+  "disable_backend_after_failures": 20,
+  "backends": [
+    {
+      "name": "gpu0",
+      "api_base": "http://10.0.0.1:18180/v1/chat/completions",
+      "model": "Qwen3-VL",
+      "api_key": "sk-local",
+      "concurrency": 16,
+      "weight": 1
+    },
+    {
+      "name": "gpu1",
+      "api_base": "http://10.0.0.2:18180/v1/chat/completions",
+      "model": "Qwen3-VL",
+      "api_key": "sk-local",
+      "concurrency": 24,
+      "weight": 1
+    }
+  ]
+}
+```
+
+说明：
+
+- `concurrency` 是该 backend 的固定并发。
+- `max_retries=2` 表示单条样本首次失败后最多再重试 2 次。
+- `disable_backend_after_failures=20` 表示某个 backend 连续失败 20 次后临时停用。
+- 多卡可以注册多个 backend。
+- 多模型也可以注册多个 backend。
+
+### 提示词
+
+默认提示词：
+
+```text
+prompts/translate_sample_zh.txt
+prompts/translate_utterance_zh.txt
+```
+
+任务配置里可以覆盖：
+
+```json
+{
+  "sample_prompt_file": "prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "prompts/translate_utterance_zh.txt"
+}
+```
+
+## 功能一：翻译已有 JSON
+
+用于翻译已经准备好的英文 ShareGPT JSON/JSONL。
+
+直接编辑：
+
+```text
+configs/translate_json.json
+```
+
+默认内容（相对路径都相对项目根）：
+
+```json
+{
+  "input": "data/input/english.jsonl",
+  "output_jsonl": "output/chinese.jsonl",
+  "output_json": "output/chinese.json",
+  "done_path": "output/chinese.done.jsonl",
+  "failed_path": "output/chinese.failed.jsonl",
+  "images_root": "data/input",
+  "backend_config": "configs/backend_config.json",
+  "sample_prompt_file": "prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
+  "resume": true
+}
+```
+
+`output_json`、`images_root`、`failed_path`、`rejected_path`、`report_path` 可省略；默认会按 `output_jsonl` 所在目录推导为 `train.json`、`images/`、`failed.jsonl`、`rejected.jsonl`、`report.json`。
+
+运行：
+
+```bash
+bash scripts/in_translate_json.sh
+```
+
+输入：
+
+- `input`：英文 ShareGPT JSON 或 JSONL。
+- `images_root`：图片相对路径根目录。
+
+输出：
+
+```text
+output/chinese.jsonl
+output/chinese.json
+output/chinese.done.jsonl
+output/chinese.failed.jsonl
+```
+
+注意：
+
+- 这个功能不复制图片。
+- 这个功能不改原 JSON 里的 `images` 路径。
+- `resume: true` 时会根据 `id` 跳过已完成样本，兼容已跑过的数据。
+
+## 功能二：解压 zip 并按比例翻译
+
+用于从 zip/parquet 数据集中直接抽样并生成训练数据。可以设置每个数据集内部中文和英文比例。
+
+直接编辑：
+
+```text
+configs/datasets.json
+configs/translate_zips.json
+```
+
+数据集注册表（`data_root` 相对项目根）：
+
+```json
+{
+  "data_root": "data/zips",
+  "datasets": {
+    "okvqa": {
+      "zip": "okvqa.zip"
+    },
+    "chartqa": {
+      "zip": "chartqa.zip"
+    },
+    "captcha": {
+      "zip": "captcha/captcha.zip"
+    }
+  }
+}
+```
+
+任务配置：
+
+```json
+{
+  "dataset_registry": "configs/datasets.json",
+  "datasets": ["okvqa", "chartqa"],
+  "output_jsonl": "output/train.jsonl",
+  "chinese_ratio": 1.0,
+  "seed": 42,
+  "limit_per_dataset": null,
+  "backend_config": "configs/backend_config.json",
+  "sample_prompt_file": "prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
+  "emit_raw": true,
+  "resume": true
+}
+```
+
+`output_json`、`images_root`、`rejected_path`、`report_path` 同样可省略，默认从 `output_jsonl` 推导。
+
+运行：
+
+```bash
+bash scripts/in_translate_zips.sh
+```
+
+输出分为原始层、翻译层和汇总层：
+
+```text
+output/train.jsonl                    # 汇总层：所有数据集的翻译层
+output/train.json
+output/<dataset_name>/raw.jsonl       # 原始层：翻译前英文记录
+output/<dataset_name>/train.jsonl     # 翻译层：中文与保留英文的混合
+output/<dataset_name>/train.json
+output/images/<dataset_name>/<hash>.<ext>
+output/failed.jsonl
+output/rejected.jsonl
+output/report.json
+```
+
+比例说明：
+
+- `chinese_ratio: 1.0` 表示全部翻成中文（默认配置）；设为 `0.7` 则每个数据集内部约 70% 中文、30% 英文。
+- 英文样本不调用模型，直接输出原始英文 ShareGPT。
+- 中文样本调用模型翻译。
+- 使用稳定 hash 分流，同一个 `id` 重跑时会落到同一种语言。
+- `emit_raw: true` 默认开启原始层；设为 `false` 时不写 `raw.jsonl`。
+- raw 与 train 复用同一批图片路径，图片只落盘一次；raw 只生成 JSONL，不生成 `raw.json`。
+- 如果旧任务已完成一部分后才开启 raw，`resume: true` 不会回填已跳过的英文原文；需要完整 raw 时请用 `resume: false` 从头运行。
+
+可以对单个数据集覆盖比例和数量：
+
+```json
+{
+  "datasets": [
+    "okvqa",
+    {
+      "name": "captcha",
+      "chinese_ratio": 1.0,
+      "limit": 5000
+    }
+  ]
+}
+```
+
+## 功能三：解压 zip 不翻译
+
+用于从 zip/parquet 数据集中抽取图片和英文文本，直接生成英文 ShareGPT，不调用模型。
+
+直接编辑：
+
+```text
+configs/export_zips.json
+```
+
+任务配置：
+
+```json
+{
+  "dataset_registry": "configs/datasets.json",
+  "datasets": ["*"],
+  "output_jsonl": "output/train_en.jsonl",
+  "limit_per_dataset": null,
+  "resume": true
+}
+```
+
+运行：
+
+```bash
+bash scripts/in_export_zips.sh
+```
+
+输出（每个数据集单独一份 + 一份汇总）：
+
+```text
+output/train_en.jsonl                 # 汇总
+output/train_en.json
+output/<dataset_name>/train_en.jsonl  # 每个数据集
+output/<dataset_name>/train_en.json
+output/images/<dataset_name>/<hash>.<ext>
+output/rejected.jsonl
+output/report.json
+```
+
+这个功能不需要 `backend_config.json`。
+
+## 合并中间 JSONL
+
+`merge` 按参数顺序拼接一个或多个 JSONL；相同 `id` 只保留首次出现的记录，无 `id` 的记录全部保留。它不抽样、不排序、不打乱，也不修改记录内容。
+
+```bash
+python -m finevision_to_sharegpt merge \
+  --inputs output/okvqa/train.jsonl output/chartqa/train.jsonl \
+  --output output/merged.jsonl
+```
+
+命令会覆盖生成：
+
+```text
+output/merged.jsonl
+output/merged.json
+```
+
+终端会打印 `read`、`written`、`duplicates` 和输出路径统计。
+
+## 校验输出
+
+校验 ShareGPT JSON/JSONL：
+
+```bash
+python -m finevision_to_sharegpt validate \
+  --input output/train.jsonl \
+  --output output/train.clean.jsonl \
+  --rejects output/train.format_rejected.jsonl
+```
+
+检查行数：
+
+```bash
+wc -l output/train.jsonl
+wc -l output/failed.jsonl
+cat output/report.json
+```
+
+## 本地开发测试
+
+```bash
+pytest -q
+```
+
+当前测试覆盖：
+
+- 多图解析和输出。
+- Qwen 多图 payload。
+- JSON/JSONL 流式读写和汇总。
+- raw 中间层的开关、truncate 和失败重试去重。
+- merge 稳定去重、无 id 保留与 CLI 统计。
+- backend 固定并发、重试和失败禁用。
+- translate-json 配置模式和旧参数模式。
+- zip 导出和 zip 按比例翻译。

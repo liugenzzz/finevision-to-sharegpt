@@ -1,0 +1,12 @@
+{
+  "input": "/data/input/english.jsonl",
+  "output_jsonl": "/data/output/chinese.jsonl",
+  "output_json": "/data/output/chinese.json",
+  "done_path": "/data/output/chinese.done.jsonl",
+  "failed_path": "/data/output/chinese.failed.jsonl",
+  "images_root": "/data/input",
+  "backend_config": "/config/backend_config.json",
+  "sample_prompt_file": "/prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "/prompts/translate_utterance_zh.txt",
+  "resume": true
+}

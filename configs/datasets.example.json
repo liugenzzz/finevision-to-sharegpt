@@ -1,0 +1,14 @@
+{
+  "data_root": "/data/zips",
+  "datasets": {
+    "okvqa": {
+      "zip": "okvqa.zip"
+    },
+    "chartqa": {
+      "zip": "chartqa.zip"
+    },
+    "captcha": {
+      "zip": "captcha/captcha.zip"
+    }
+  }
+}
