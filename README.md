@@ -9,6 +9,8 @@
 3. `export-zips`：从注册的 zip/parquet 数据集中抽取样本，不调用模型，直接导出英文 ShareGPT。
 4. `merge`：按输入顺序合并中间 JSONL，并按 `id` 保留首次出现的记录。
 
+另有一组可选的 MySQL 命令（`db-init` / `db-scan` / `db-export` / `db-status`），用于跨任务增量抽取，见下方“可选：接入 MySQL”。
+
 详细运行说明见 [docs/运行说明.md](docs/运行说明.md)。
 
 ## 主要特性
@@ -25,6 +27,7 @@
 - `translate-zips` 默认保留每个数据集翻译前的 `raw.jsonl` 中间层。
 - 支持稳定合并多个 JSONL，同时生成 JSONL 和 JSON 数组。
 - 已有 JSON 翻译不复制图片、不改 `images` 路径。
+- 可选接入 MySQL 做消费账本，跨任务增量抽取（用多少抽多少），不连库也能正常运行。
 
 ## 输出格式
 
@@ -360,6 +363,107 @@ output/report.json
 
 这个功能不需要 `backend_config.json`。
 
+## 可选：接入 MySQL
+
+**不配置就完全用不到。** 没有 `mysql` 段时，上面三条流水线的行为和以前一模一样，也不需要装 `PyMySQL`。
+
+### 解决什么问题
+
+文件模式的 `resume` 只认**本次** `output_jsonl` 里的 `id`。换一个输出目录跑第二批，就会从头重新抽到同一批样本。接上 MySQL 后：
+
+- **跨任务增量**：换输出目录、换机器都不会重复抽到已经用过的样本。
+- **跳读**：记录每个 parquet 扫到哪一行，重跑时按 row group 整组跳过，不再空转前面几百万行。
+- **换版隔离**：zip 换一版（内容变了）自动算作新版本，历史消费记录不会被误判。
+- **源数据与译文分表**：源数据进 `sample_source`，译文进 `sample_translation`，靠 `source_id` 关联；每个数据集另有一个 `v_sample_source_<数据集名>` 视图，查起来跟小表一样。
+
+### 配置
+
+编辑 `configs/mysql.json`（可参考 `configs/mysql.example.json`），在任务配置里加一个 `mysql` 段：
+
+```json
+{
+  "mysql": {
+    "host": "10.0.0.5",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "batch_size": 200,
+    "claim_ttl_seconds": 3600,
+    "on_connect_error": "fallback"
+  }
+}
+```
+
+说明：
+
+- `password` 支持 `${环境变量}` 展开，不用把密码写进 git。
+- `on_connect_error: "fallback"` 表示连不上就打个告警、降级回文件模式继续跑；设成 `"fail"` 则直接报错退出，避免“以为在记账其实没记”。
+- `batch_size` 是攒批写入的条数，默认 200 条或 5 秒先到先 flush。
+- `claim_ttl_seconds` 是一条样本被抽走后的认领有效期；进程崩了以后，超过这个时间的认领会在下次运行时自动回收重抽。
+- 目标是 MySQL 8.0。若服务端没有 `utf8mb4_0900_ai_ci`，用 `collation` 字段改掉。
+
+把这个 `mysql` 段加进 `configs/translate_zips.json` 或 `configs/export_zips.json`，原来的命令就自动带上账本了，用法不变。
+
+### 建表
+
+```bash
+bash scripts/in_db_init.sh
+```
+
+幂等，重复跑没有副作用。会建四张表和每个已注册数据集的视图。
+
+### 用多少抽多少
+
+`limit_per_dataset` 的语义是**本次新增 N**，不是累计上限 N。所以配好 `limit_per_dataset: 5000` 之后：
+
+```bash
+bash scripts/in_translate_zips.sh   # 第一次：抽 5000 条
+bash scripts/in_translate_zips.sh   # 第二次：再抽 5000 条全新的
+```
+
+两次的输出目录可以不同，也不会重复。
+
+### 其他命令
+
+```bash
+bash scripts/in_db_scan.sh      # 只把源数据灌进库（status=pending），不调模型
+bash scripts/in_db_status.sh    # 看各数据集各状态的计数
+bash scripts/in_db_export.sh    # 从库里导出 ShareGPT JSONL
+```
+
+`db-export` 可以按条件筛选，多余的参数直接透传：
+
+```bash
+bash scripts/in_db_export.sh configs/mysql.json --dataset okvqa --lang zh
+```
+
+同一条源数据允许有多条译文（换模型或换提示词重翻会各存一条，带上 `model_name` 和 `prompt_version`），导出时取最新的一条。
+
+### 表结构
+
+| 表 | 作用 |
+| --- | --- |
+| `dataset_version` | zip 指纹（大小 + 头尾采样 hash），一个 zip 版本一行 |
+| `sample_source` | 源数据大表：英文原文、图片路径、消费状态 |
+| `sample_translation` | 译文表，记 `backend_name` / `model_name` / `prompt_version` / `latency_ms` |
+| `dataset_cursor` | 每个 parquet 扫到哪一行的水位线 |
+
+图片**不进库**，仍然按 `images/<数据集名>/<hash>.<ext>` 落盘，表里只存相对路径。
+
+### 本地起一个测试库
+
+```bash
+docker compose up -d mysql
+```
+
+跑集成测试（不设这个环境变量就自动跳过）：
+
+```bash
+FV_TEST_MYSQL='{"host":"127.0.0.1","port":3306,"user":"fv","password":"fv","database":"finevision"}' \
+  pytest tests/test_db_integration.py
+```
+
 ## 合并中间 JSONL
 
 `merge` 按参数顺序拼接一个或多个 JSONL；相同 `id` 只保留首次出现的记录，无 `id` 的记录全部保留。它不抽样、不排序、不打乱，也不修改记录内容。
@@ -414,3 +518,7 @@ pytest -q
 - backend 固定并发、重试和失败禁用。
 - translate-json 配置模式和旧参数模式。
 - zip 导出和 zip 按比例翻译。
+- parquet 按 row group 跳读与断点续扫。
+- MySQL 配置解析、zip 指纹、批量写入与降级回文件模式。
+- 流水线对账本的调用（认领、完成、失败、译文归属）。
+- 连真实数据库的端到端用例（未配置 `FV_TEST_MYSQL` 时自动跳过）。

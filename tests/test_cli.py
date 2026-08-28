@@ -64,6 +64,10 @@ def test_cli_only_exposes_documented_commands():
         "export-zips",
         "validate",
         "merge",
+        "db-init",
+        "db-scan",
+        "db-export",
+        "db-status",
     }
 
 
@@ -311,7 +315,7 @@ def test_cli_zip_config_commands_pass_tqdm_progress_factory(monkeypatch, tmp_pat
         received.append(("export", progress_factory))
         return {"written": 0}
 
-    def fake_translate_runner(config, pool, handler, progress_factory=None):
+    def fake_translate_runner(config, pool, handler, progress_factory=None, translation_meta=None):
         received.append(("translate", progress_factory))
         return {"written": 0}
 
@@ -353,6 +357,10 @@ def test_container_internal_scripts_call_config_commands():
         "scripts/in_translate_json.sh": "translate-json",
         "scripts/in_translate_zips.sh": "translate-zips",
         "scripts/in_export_zips.sh": "export-zips",
+        "scripts/in_db_init.sh": "db-init",
+        "scripts/in_db_scan.sh": "db-scan",
+        "scripts/in_db_export.sh": "db-export",
+        "scripts/in_db_status.sh": "db-status",
     }
 
     for script_path, command in scripts.items():

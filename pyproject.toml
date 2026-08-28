@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8,<9"]
+mysql = ["PyMySQL>=1.1,<2"]
 
 [project.scripts]
 finevision-to-sharegpt = "finevision_to_sharegpt.cli:main"

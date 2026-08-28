@@ -1,0 +1,24 @@
+{
+  "dataset_registry": "configs/datasets.json",
+  "datasets": ["*"],
+  "output_jsonl": "output/train.jsonl",
+  "chinese_ratio": 1.0,
+  "seed": 42,
+  "limit_per_dataset": 5000,
+  "backend_config": "configs/backend_config.json",
+  "emit_raw": true,
+  "resume": true,
+  "batch_id": null,
+  "mysql": {
+    "host": "10.0.0.5",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "charset": "utf8mb4",
+    "batch_size": 200,
+    "flush_interval_seconds": 5,
+    "claim_ttl_seconds": 3600,
+    "on_connect_error": "fallback"
+  }
+}

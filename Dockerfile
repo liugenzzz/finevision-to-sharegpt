@@ -12,7 +12,7 @@ COPY prompts ./prompts
 COPY configs ./configs
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install .
+    && python -m pip install ".[mysql]"
 
 ENTRYPOINT ["finevision-to-sharegpt"]
 CMD ["--help"]

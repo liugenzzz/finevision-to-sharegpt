@@ -3,3 +3,4 @@ Pillow>=10,<12
 pyarrow>=15,<22
 pytest>=8,<9
 tqdm>=4,<5
+PyMySQL>=1.1,<2

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 from .archive import extract_parquets_from_zip
 from .config_loader import DatasetRequest, ZipTaskConfig
 from .dataset_registry import RegisteredDataset, load_dataset_registry, resolve_dataset_selection
+from .db import ConsumptionLedger, DatasetVersion, open_ledger
 from .image_store import ImageStore, _safe_path_part
 from .json_io import (
     append_jsonl,
@@ -19,7 +21,7 @@ from .json_io import (
     prune_failed,
     truncate_file,
 )
-from .parquet_reader import parquet_num_rows, stream_parquet_rows
+from .parquet_reader import iter_parquet_rows_from, parquet_num_rows
 from .sample_parser import parse_row
 from .translation_job import TranslationTask
 from .translator import build_sharegpt_record
@@ -38,6 +40,7 @@ def should_translate_to_chinese(sample_id: str, chinese_ratio: float, seed: int)
 @dataclass(frozen=True)
 class ParsedZipRow:
     dataset: RegisteredDataset
+    version: DatasetVersion
     request: DatasetRequest
     parquet_name: str
     row_index: int
@@ -49,15 +52,17 @@ class ParsedZipRow:
 
 
 def run_export_zips(config: ZipTaskConfig, progress_factory: Any | None = None) -> dict[str, Any]:
-    image_store, datasets, completed_ids = _prepare_zip_run(config, truncate_failed=False)
+    image_store, datasets, ledger = _prepare_zip_run(config, truncate_failed=False)
     totals: dict[str, Any] = {"processed": 0, "written": 0, "rejected": 0, "skipped": 0, "datasets": {}}
+    versions: dict[str, DatasetVersion] = {}
 
-    with tempfile.TemporaryDirectory(prefix="finevision-to-sharegpt-export-") as tmp:
+    with ledger, tempfile.TemporaryDirectory(prefix="finevision-to-sharegpt-export-") as tmp:
         for item in _iter_dataset_rows(
             config=config,
             datasets=datasets,
             image_store=image_store,
-            completed_ids=completed_ids,
+            ledger=ledger,
+            versions=versions,
             totals=totals,
             progress_factory=progress_factory,
             tmp_root=Path(tmp),
@@ -67,7 +72,7 @@ def run_export_zips(config: ZipTaskConfig, progress_factory: Any | None = None) 
         ):
             record = build_sharegpt_record(item.sample, item.image_paths)
             _write_record(config, item.dataset.name, record)
-            completed_ids.add(item.sample_id)
+            ledger.mark_done(item.version, item.sample_id, "en")
             totals["written"] += 1
             item.stats["written"] += 1
             _update_zip_progress(item.progress, item.stats)
@@ -81,8 +86,13 @@ def run_translate_zips(
     backend_pool: Any,
     handler: Any,
     progress_factory: Any | None = None,
+    translation_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    image_store, datasets, completed_ids = _prepare_zip_run(config, truncate_failed=True)
+    image_store, datasets, ledger = _prepare_zip_run(config, truncate_failed=True)
+    meta = translation_meta or {}
+    models_by_backend: dict[str, str] = meta.get("models_by_backend") or {}
+    prompt_version: str = meta.get("prompt_version") or ""
+    versions: dict[str, DatasetVersion] = {}
     raw_done = _prepare_raw_outputs(config, datasets) if config.emit_raw else {}
     totals: dict[str, Any] = {
         "processed": 0,
@@ -101,7 +111,8 @@ def run_translate_zips(
                 config=config,
                 datasets=datasets,
                 image_store=image_store,
-                completed_ids=completed_ids,
+                ledger=ledger,
+                versions=versions,
                 totals=totals,
                 progress_factory=progress_factory,
                 tmp_root=Path(tmp),
@@ -141,31 +152,52 @@ def run_translate_zips(
                 else:
                     record = build_sharegpt_record(item.sample, item.image_paths)
                     _write_record(config, item.dataset.name, record)
-                    completed_ids.add(item.sample_id)
+                    ledger.mark_done(item.version, item.sample_id, "en")
                     totals["written"] += 1
                     totals["english"] += 1
                     item.stats["written"] += 1
                     item.stats["english"] += 1
                     _update_zip_progress(item.progress, item.stats)
 
-    for result in backend_pool.map_unordered(chinese_tasks(), handler):
-        task = result.item
-        dataset_name = (task.metadata or {}).get("dataset")
-        dataset_stats = totals["datasets"].get(dataset_name) if dataset_name else None
-        if not result.ok:
-            if config.failed_path is not None:
-                append_jsonl(
-                    config.failed_path,
-                    {"id": task.id, "error": result.error, "backend": result.backend_name, **(task.metadata or {})},
+    with ledger:
+        for result in backend_pool.map_unordered(chinese_tasks(), handler):
+            task = result.item
+            metadata = task.metadata or {}
+            dataset_name = metadata.get("dataset")
+            dataset_stats = totals["datasets"].get(dataset_name) if dataset_name else None
+            version = versions.get(dataset_name) if dataset_name else None
+            if not result.ok:
+                if config.failed_path is not None:
+                    append_jsonl(
+                        config.failed_path,
+                        {
+                            "id": task.id,
+                            "error": result.error,
+                            "backend": result.backend_name,
+                            **metadata,
+                        },
+                    )
+                if version is not None:
+                    ledger.mark_failed(version, task.id, result.error)
+                totals["failed"] += 1
+                if dataset_stats is not None:
+                    dataset_stats["failed"] += 1
+                continue
+            _write_record(config, dataset_name, result.value)
+            if version is not None:
+                ledger.record_translation(
+                    version,
+                    task.id,
+                    result.value.get("conversations") or [],
+                    result.backend_name,
+                    models_by_backend.get(result.backend_name or "", ""),
+                    prompt_version,
+                    metadata.get("latency_ms"),
                 )
-            totals["failed"] += 1
+                ledger.mark_done(version, task.id, "zh")
+            totals["written"] += 1
             if dataset_stats is not None:
-                dataset_stats["failed"] += 1
-            continue
-        _write_record(config, dataset_name, result.value)
-        totals["written"] += 1
-        if dataset_stats is not None:
-            dataset_stats["written"] += 1
+                dataset_stats["written"] += 1
 
     _finalize_zip_run(config, datasets, totals, prune_failures=True)
     return totals
@@ -174,10 +206,20 @@ def run_translate_zips(
 def _prepare_zip_run(
     config: ZipTaskConfig,
     truncate_failed: bool,
-) -> tuple[ImageStore, list[tuple[RegisteredDataset, DatasetRequest]], set[str]]:
+    prepare_outputs: bool = True,
+) -> tuple[ImageStore, list[tuple[RegisteredDataset, DatasetRequest]], ConsumptionLedger]:
+    """Resolve datasets and the ledger, and reset output files when not resuming.
+
+    ``prepare_outputs=False`` leaves every output file alone; ``db-scan`` only
+    fills the database and must not create or truncate a ShareGPT output.
+    """
+
     image_store = _image_store_from_images_root(config.images_root)
     registry = load_dataset_registry(config.dataset_registry)
     datasets = _selected_datasets(registry, config.datasets)
+    if not prepare_outputs:
+        ledger = open_ledger(config.mysql, set(), batch_id=_batch_id(config))
+        return image_store, datasets, ledger
     if not config.resume:
         truncate_file(config.output_jsonl)
         for dataset, _request in datasets:
@@ -190,38 +232,52 @@ def _prepare_zip_run(
     elif config.output_jsonl.exists():
         _backfill_dataset_jsonls(config, datasets)
     completed_ids = load_completed_ids([config.output_jsonl]) if config.resume else set()
-    return image_store, datasets, completed_ids
+    ledger = open_ledger(config.mysql, completed_ids, batch_id=_batch_id(config))
+    return image_store, datasets, ledger
+
+
+def _batch_id(config: ZipTaskConfig) -> str:
+    return config.batch_id or time.strftime("%Y%m%d-%H%M%S")
 
 
 def _iter_dataset_rows(
     config: ZipTaskConfig,
     datasets: list[tuple[RegisteredDataset, DatasetRequest]],
     image_store: ImageStore,
-    completed_ids: set[str],
+    ledger: ConsumptionLedger,
+    versions: dict[str, DatasetVersion],
     totals: dict[str, Any],
     progress_factory: Any | None,
     tmp_root: Path,
     description_prefix: str,
     stats_factory: Any,
     limit_reached: Any,
+    claim_status: str = "claimed",
 ) -> Any:
     for dataset, request in datasets:
         dataset_stats = stats_factory()
         limit = request.limit if request.limit is not None else config.limit_per_dataset
+        version = ledger.open_dataset(dataset.name, dataset.zip_path, config.images_root)
+        versions[dataset.name] = version
         for parquet in extract_parquets_from_zip(dataset.zip_path, tmp_root):
+            plan = ledger.scan_plan(version, parquet.name)
             progress = _progress_rows(
-                stream_parquet_rows(parquet.path),
+                iter_parquet_rows_from(parquet.path, start_row=plan.start_row),
                 progress_factory,
                 parquet.path,
                 f"{description_prefix} {dataset.name}/{parquet.name}",
+                start_row=plan.start_row,
             )
-            for row_index, row in enumerate(progress):
+            exhausted = True
+            for row_index, row in progress:
                 if limit is not None and limit_reached(dataset_stats, limit):
+                    exhausted = False
                     break
                 sample_id = f"{dataset.zip_path.stem}:{parquet.name}:{row_index}"
-                if sample_id in completed_ids:
+                if ledger.is_consumed(version, sample_id, row_index, plan):
                     totals["skipped"] += 1
                     dataset_stats["skipped"] += 1
+                    ledger.note_scanned(version, parquet.name, row_index)
                     _update_zip_progress(progress, dataset_stats)
                     continue
                 totals["processed"] += 1
@@ -229,6 +285,8 @@ def _iter_dataset_rows(
                 parsed = parse_row(row, source_id=sample_id)
                 if not parsed.accepted:
                     _write_reject(config.rejected_path, dataset, parquet.name, row_index, parsed)
+                    ledger.mark_rejected(version, parquet.name, row_index, sample_id, parsed.reason)
+                    ledger.note_scanned(version, parquet.name, row_index)
                     totals["rejected"] += 1
                     dataset_stats["rejected"] += 1
                     _update_zip_progress(progress, dataset_stats)
@@ -237,8 +295,19 @@ def _iter_dataset_rows(
                     image_store.save(image_bytes, dataset_name=dataset.name)
                     for image_bytes in parsed.sample.image_bytes_list
                 ]
+                ledger.claim(
+                    version,
+                    parquet.name,
+                    row_index,
+                    sample_id,
+                    [{"from": turn.role, "value": turn.text} for turn in parsed.sample.turns],
+                    image_paths,
+                    status=claim_status,
+                )
+                ledger.note_scanned(version, parquet.name, row_index)
                 yield ParsedZipRow(
                     dataset=dataset,
+                    version=version,
                     request=request,
                     parquet_name=parquet.name,
                     row_index=row_index,
@@ -248,6 +317,8 @@ def _iter_dataset_rows(
                     stats=dataset_stats,
                     progress=progress,
                 )
+            if exhausted:
+                ledger.finish_parquet(version, parquet.name)
             if limit is not None and limit_reached(dataset_stats, limit):
                 break
         totals["datasets"][dataset.name] = dataset_stats
@@ -362,11 +433,17 @@ def _backfill_dataset_jsonls(config: ZipTaskConfig, datasets: list[tuple[Registe
         existing_by_safe[safe].add(record_id)
 
 
-def _progress_rows(rows: Any, progress_factory: Any | None, parquet_path: Path, description: str) -> Any:
+def _progress_rows(
+    rows: Any,
+    progress_factory: Any | None,
+    parquet_path: Path,
+    description: str,
+    start_row: int = 0,
+) -> Any:
     if progress_factory is None:
         return rows
     try:
-        total = parquet_num_rows(parquet_path)
+        total = max(0, parquet_num_rows(parquet_path) - start_row)
     except Exception:
         total = None
     return progress_factory(rows, total=total, desc=description, unit="row")
@@ -405,3 +482,44 @@ def _write_reject(
             **parsed.metadata,
         },
     )
+
+
+def run_scan_zips(config: ZipTaskConfig, progress_factory: Any | None = None) -> dict[str, Any]:
+    """Ingest source samples into MySQL without producing ShareGPT output.
+
+    Rows land as ``pending`` so a later ``translate-zips`` or ``export-zips``
+    run claims them normally. Images are still written, because
+    ``image_paths`` has to point at files that exist.
+    """
+
+    if config.mysql is None:
+        raise ValueError("db-scan requires a mysql section in the task config")
+    image_store, datasets, ledger = _prepare_zip_run(
+        config, truncate_failed=False, prepare_outputs=False
+    )
+    totals: dict[str, Any] = {"processed": 0, "written": 0, "rejected": 0, "skipped": 0, "datasets": {}}
+    versions: dict[str, DatasetVersion] = {}
+
+    with ledger, tempfile.TemporaryDirectory(prefix="finevision-to-sharegpt-scan-") as tmp:
+        for item in _iter_dataset_rows(
+            config=config,
+            datasets=datasets,
+            image_store=image_store,
+            ledger=ledger,
+            versions=versions,
+            totals=totals,
+            progress_factory=progress_factory,
+            tmp_root=Path(tmp),
+            description_prefix="scan",
+            stats_factory=lambda: {"processed": 0, "written": 0, "rejected": 0, "skipped": 0},
+            limit_reached=lambda stats, limit: stats["written"] >= limit,
+            claim_status="pending",
+        ):
+            totals["written"] += 1
+            item.stats["written"] += 1
+            _update_zip_progress(item.progress, item.stats)
+
+    if config.report_path is not None:
+        config.report_path.parent.mkdir(parents=True, exist_ok=True)
+        config.report_path.write_text(json.dumps(totals, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return totals
