@@ -287,3 +287,31 @@ def _query_one(mysql_settings, sql):
         return ledger.pool.run(query)
     finally:
         ledger.close()
+
+
+def test_db_scan_resumes_instead_of_rereading(tmp_path, clean_database, mysql_settings):
+    registry = make_zip_dataset(tmp_path, rows=8)
+    scan_config, scan_path = write_config(tmp_path, registry, mysql_settings, name="scan.json")
+
+    first = run_scan_zips(scan_config, write_images=False)
+    second = run_scan_zips(scan_config, write_images=False)
+
+    assert first["written"] == 8
+    # A bulk load that dies partway must not redo the parquet reads on restart.
+    assert second["written"] == 0
+    assert second["processed"] == 0
+    assert run_db_status(scan_path)["totals"] == {"pending": 8}
+
+
+def test_pending_rows_are_still_claimable_after_a_scan(tmp_path, clean_database, mysql_settings):
+    registry = make_zip_dataset(tmp_path, rows=8)
+    scan_config, scan_path = write_config(tmp_path, registry, mysql_settings, name="scan.json")
+    use_config, _ = write_config(
+        tmp_path, registry, mysql_settings, name="use.json", limit_per_dataset=3
+    )
+
+    run_scan_zips(scan_config, write_images=False)
+    run_export_zips(use_config)
+
+    # The ingest watermark must not hide pending rows from the consume path.
+    assert run_db_status(scan_path)["totals"] == {"pending": 5, "done": 3}

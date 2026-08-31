@@ -190,7 +190,18 @@ class MySQLLedger(ConsumptionLedger):
 
     # -- scanning --------------------------------------------------------
 
-    def scan_plan(self, version: DatasetVersion, parquet_name: str) -> ScanPlan:
+    def scan_plan(
+        self, version: DatasetVersion, parquet_name: str, for_ingest: bool = False
+    ) -> ScanPlan:
+        """Where to resume scanning one parquet.
+
+        ``for_ingest`` is the bulk-load case (``db-scan``): every row below the
+        watermark is already in the table whatever its status, so the scan
+        resumes at the watermark and re-reads nothing. The consume path cannot
+        do that — a ``pending`` row below the watermark is exactly what it is
+        looking for — so it drops back to the earliest unfinished row instead.
+        """
+
         version_id = version.version_id
         if version_id is None:
             return ScanPlan()
@@ -202,6 +213,8 @@ class MySQLLedger(ConsumptionLedger):
             )
             row = cursor.fetchone()
             watermark = int(row[0]) + 1 if row is not None else 0
+            if for_ingest:
+                return ScanPlan(start_row=watermark, gap_end=watermark)
             cursor.execute(
                 "SELECT MIN(row_index) FROM sample_source "
                 f"WHERE version_id = %s AND parquet_name = %s AND {_UNFINISHED_PREDICATE}",

@@ -26,13 +26,15 @@ class RecordingLedger(ConsumptionLedger):
         self.translations = []
         self.scanned = []
         self.finished = []
+        self.ingest_plans = []
         self.flushes = 0
         self.closed = False
 
     def open_dataset(self, dataset, zip_path, images_root):
         return DatasetVersion(dataset=dataset, version_id=7, source_hash="deadbeef")
 
-    def scan_plan(self, version, parquet_name):
+    def scan_plan(self, version, parquet_name, for_ingest=False):
+        self.ingest_plans.append(for_ingest)
         return self.plan
 
     def is_consumed(self, version, sample_id, row_index, plan):
@@ -316,3 +318,15 @@ def test_run_scan_zips_ingests_as_pending_and_writes_no_output(tmp_path, monkeyp
     assert all(claim[2] == "pending" for claim in ledger.claims)
     assert ledger.done == []
     assert not (tmp_path / "output" / "train.jsonl").exists()
+    # Bulk load resumes at the watermark, so a rerun re-reads nothing.
+    assert ledger.ingest_plans == [True]
+
+
+def test_consume_paths_do_not_use_the_ingest_plan(tmp_path, monkeypatch):
+    registry = make_zip_dataset(tmp_path, rows=2)
+    ledger = use_ledger(monkeypatch, RecordingLedger())
+
+    run_export_zips(load_zip_task_config(write_config(tmp_path, registry)))
+
+    # A pending row below the watermark is exactly what consuming looks for.
+    assert ledger.ingest_plans == [False]

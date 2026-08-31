@@ -47,7 +47,9 @@ class ConsumptionLedger(ABC):
     def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion: ...
 
     @abstractmethod
-    def scan_plan(self, version: DatasetVersion, parquet_name: str) -> ScanPlan: ...
+    def scan_plan(
+        self, version: DatasetVersion, parquet_name: str, for_ingest: bool = False
+    ) -> ScanPlan: ...
 
     @abstractmethod
     def is_consumed(self, version: DatasetVersion, sample_id: str, row_index: int, plan: ScanPlan) -> bool: ...
@@ -124,7 +126,9 @@ class JsonlLedger(ConsumptionLedger):
     def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion:
         return DatasetVersion(dataset=dataset)
 
-    def scan_plan(self, version: DatasetVersion, parquet_name: str) -> ScanPlan:
+    def scan_plan(
+        self, version: DatasetVersion, parquet_name: str, for_ingest: bool = False
+    ) -> ScanPlan:
         return ScanPlan()
 
     def is_consumed(self, version: DatasetVersion, sample_id: str, row_index: int, plan: ScanPlan) -> bool:

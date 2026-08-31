@@ -1,16 +1,8 @@
 {
   "dataset_registry": "configs/datasets.json",
-  "datasets": [
-    "*"
-  ],
-  "output_jsonl": "output/train.jsonl",
-  "chinese_ratio": 1.0,
-  "seed": 42,
-  "limit_per_dataset": 100,
-  "backend_config": "configs/backend_config.json",
-  "sample_prompt_file": "prompts/translate_sample_zh.txt",
-  "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
-  "emit_raw": true,
+  "datasets": ["*"],
+  "output_jsonl": "output/scan/placeholder.jsonl",
+  "limit_per_dataset": null,
   "resume": true,
   "mysql": {
     "host": "127.0.0.1",

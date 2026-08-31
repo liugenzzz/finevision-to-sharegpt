@@ -258,6 +258,7 @@ def _iter_dataset_rows(
     claim_status: str = "claimed",
     progress_state: dict[str, Any] | None = None,
     write_images: bool = True,
+    for_ingest: bool = False,
 ) -> Any:
     overall = _overall_progress(datasets, progress_factory, description_prefix)
     if progress_state is not None:
@@ -269,7 +270,7 @@ def _iter_dataset_rows(
         version = ledger.open_dataset(dataset.name, dataset.source_path, config.images_root)
         versions[dataset.name] = version
         for parquet in iter_dataset_parquets(dataset, tmp_root):
-            plan = ledger.scan_plan(version, parquet.name)
+            plan = ledger.scan_plan(version, parquet.name, for_ingest=for_ingest)
             progress = _progress_rows(
                 iter_parquet_rows_from(parquet.path, start_row=plan.start_row),
                 progress_factory,
@@ -591,6 +592,7 @@ def run_scan_zips(
             limit_reached=lambda stats, limit: stats["written"] >= limit,
             claim_status="pending",
             write_images=write_images,
+            for_ingest=True,
         ):
             totals["written"] += 1
             item.stats["written"] += 1
