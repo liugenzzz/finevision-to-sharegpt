@@ -13,6 +13,14 @@ from .pool import BatchWriter, ConnectionPool, MySQLUnavailable
 
 __all__ = ["MySQLLedger", "MySQLUnavailable"]
 
+# The upserts below use the VALUES() function rather than the row-alias form
+# MySQL 8.0.19 introduced. Verified on both engines: VALUES() works on MySQL
+# 8.4 and MariaDB 10.11, while `INSERT ... VALUES (...) AS new` is a syntax
+# error on MariaDB. MySQL 8.4 does raise warning 1287 (deprecated) for it,
+# but the warning reaches neither the error log nor PyMySQL, and switching
+# would need a second dialect plus different handling for the
+# INSERT ... SELECT statement. Revisit when MySQL actually removes it.
+
 _UPSERT_SOURCE = """
 INSERT INTO sample_source
   (version_id, dataset, sample_id, parquet_name, row_index, conversations,
