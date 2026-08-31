@@ -151,13 +151,59 @@ def test_auto_discover_via_registry_file_and_explicit_override(tmp_path):
     assert registry.datasets["arxivqa"].source_path == elsewhere
 
 
-def test_auto_discover_requires_an_existing_data_root(tmp_path):
+def test_missing_data_root_names_the_component_that_is_absent(tmp_path):
+    (tmp_path / "FineVision").mkdir()
+    (tmp_path / "other").mkdir()
     registry_path = tmp_path / "datasets.json"
     registry_path.write_text(
-        json.dumps({"data_root": str(tmp_path / "missing"), "auto_discover": True}), encoding="utf-8"
+        json.dumps({"data_root": str(tmp_path / "FineVisoin" / "sub"), "auto_discover": True}),
+        encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="auto_discover needs data_root"):
+    with pytest.raises(ValueError) as caught:
+        load_dataset_registry(registry_path)
+
+    message = str(caught.value)
+    assert "does not exist" in message
+    assert f"the path is fine up to {tmp_path}" in message
+    assert "'FineVisoin' is not there" in message
+    # The listing of what is actually there is what makes the typo obvious.
+    assert "FineVision" in message and "other" in message
+
+
+def test_missing_data_root_points_out_a_case_mismatch(tmp_path):
+    (tmp_path / "FineVision").mkdir()
+    registry_path = tmp_path / "datasets.json"
+    registry_path.write_text(
+        json.dumps({"data_root": str(tmp_path / "finevision"), "auto_discover": True}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="case differs"):
+        load_dataset_registry(registry_path)
+
+
+def test_data_root_that_is_a_file_says_so(tmp_path):
+    target = tmp_path / "FineVision"
+    target.write_text("not a directory", encoding="utf-8")
+    registry_path = tmp_path / "datasets.json"
+    registry_path.write_text(
+        json.dumps({"data_root": str(target), "auto_discover": True}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="is a file, not a directory"):
+        load_dataset_registry(registry_path)
+
+
+def test_broken_symlink_data_root_says_so(tmp_path):
+    link = tmp_path / "FineVision"
+    link.symlink_to(tmp_path / "nowhere")
+    registry_path = tmp_path / "datasets.json"
+    registry_path.write_text(
+        json.dumps({"data_root": str(link), "auto_discover": True}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="broken symlink"):
         load_dataset_registry(registry_path)
 
 

@@ -91,3 +91,40 @@ def run_db_export(
 
 def print_json(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, ensure_ascii=False))
+
+
+def run_list_datasets(config_path: Path | str, limit: int | None = None) -> dict[str, Any]:
+    """Show what a registry actually resolves to, before running anything.
+
+    Auto-discovery is easy to point one level too high, which silently
+    registers the parent as a single huge dataset. Seeing the resolved list
+    with its shard counts makes that obvious at a glance.
+    """
+
+    config = load_zip_task_config(config_path)
+    registry = load_dataset_registry(config.dataset_registry)
+    rows: list[dict[str, Any]] = []
+    for name in sorted(registry.datasets):
+        dataset = registry.datasets[name]
+        if dataset.is_directory:
+            files = [item for item in dataset.source_path.rglob("*.parquet") if item.is_file()]
+            size = sum(item.stat().st_size for item in files)
+        else:
+            files = []
+            size = dataset.source_path.stat().st_size if dataset.source_path.exists() else 0
+        rows.append(
+            {
+                "name": name,
+                "kind": dataset.kind,
+                "parquet_files": len(files) if dataset.is_directory else None,
+                "size_gb": round(size / 1024**3, 3),
+                "path": str(dataset.source_path),
+            }
+        )
+    shown = rows if limit is None else rows[:limit]
+    return {
+        "total": len(rows),
+        "total_size_gb": round(sum(row["size_gb"] for row in rows), 3),
+        "datasets": shown,
+        "truncated": len(rows) - len(shown),
+    }

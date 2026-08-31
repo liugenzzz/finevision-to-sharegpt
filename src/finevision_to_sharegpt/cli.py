@@ -13,7 +13,13 @@ from tqdm import tqdm
 from .backend_pool import TranslationBackendPool
 from .concurrency import DynamicLimiter, resolve_concurrency
 from .config_loader import load_backend_config, load_translate_json_config, load_zip_task_config
-from .db_commands import prompt_version, run_db_export, run_db_init, run_db_status
+from .db_commands import (
+    prompt_version,
+    run_db_export,
+    run_db_init,
+    run_db_status,
+    run_list_datasets,
+)
 from .json_io import append_jsonl, iter_json_records, merge_jsonl_files, truncate_file
 from .qwen_client import QwenClient
 from .translation_job import TranslationTask, record_to_source_sample, run_translation_job_with_backend_pool
@@ -66,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     merge.add_argument("--inputs", nargs="+", required=True)
     merge.add_argument("--output", required=True)
 
+    list_datasets = subparsers.add_parser(
+        "list-datasets", help="show which datasets a registry resolves to"
+    )
+    list_datasets.add_argument("--config", required=True)
+    list_datasets.add_argument("--limit", type=int)
+
     db_init = subparsers.add_parser("db-init", help="create MySQL tables and per-dataset views")
     db_init.add_argument("--config", required=True)
 
@@ -115,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "export-zips":
         stats = run_export_zips_config(load_zip_task_config(args.config), progress_factory=tqdm)
         print(json.dumps(stats, ensure_ascii=False))
+        return 0
+    if args.command == "list-datasets":
+        print(json.dumps(run_list_datasets(args.config, args.limit), ensure_ascii=False, indent=2))
         return 0
     if args.command == "db-init":
         print(json.dumps(run_db_init(args.config), ensure_ascii=False))

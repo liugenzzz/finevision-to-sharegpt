@@ -64,6 +64,7 @@ def test_cli_only_exposes_documented_commands():
         "export-zips",
         "validate",
         "merge",
+        "list-datasets",
         "db-init",
         "db-scan",
         "db-export",

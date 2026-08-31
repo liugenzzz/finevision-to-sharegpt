@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,12 +63,36 @@ def load_dataset_registry(path: Path | str) -> DatasetRegistry:
         data_root = Path(str(data_root_value))
 
     datasets: dict[str, RegisteredDataset] = {}
-    if data.get("auto_discover"):
-        datasets.update(discover_datasets(data_root, data.get("auto_discover")))
+    auto_discover = data.get("auto_discover")
+    if auto_discover:
+        datasets.update(discover_datasets(data_root, auto_discover))
     # Explicit entries win over discovered ones with the same name.
     for name, item in sorted((data.get("datasets") or {}).items()):
         datasets[str(name)] = _parse_entry(str(name), item, data_root)
+    if auto_discover and not datasets:
+        # Returning an empty registry would let every command "succeed" while
+        # writing nothing, which reads as a silent data loss.
+        raise ValueError(describe_empty_discovery(data_root, auto_discover))
     return DatasetRegistry(data_root=data_root, datasets=datasets)
+
+
+def describe_empty_discovery(data_root: Path, options: Any) -> str:
+    """Explain why a scan of an existing directory registered nothing."""
+
+    children = [item for item in sorted(data_root.iterdir()) if item.is_dir()]
+    message = [f"auto_discover found no datasets under {data_root}"]
+    if not children:
+        message.append("  it has no subdirectories at all; is this the right level of the tree?")
+        return "\n".join(message)
+    if isinstance(options, dict) and (options.get("include") or options.get("exclude")):
+        names = ", ".join(item.name for item in children[:20])
+        message.append(f"  include/exclude filtered everything out; subdirectories are: {names}")
+        return "\n".join(message)
+    names = ", ".join(item.name for item in children[:20])
+    message.append("  its subdirectories hold no .parquet files")
+    message.append(f"  subdirectories: {names}")
+    message.append("  if the parquet sits one level deeper, point data_root at that level")
+    return "\n".join(message)
 
 
 def _parse_entry(name: str, item: Any, data_root: Path) -> RegisteredDataset:
@@ -99,7 +124,7 @@ def discover_datasets(data_root: Path, options: Any = True) -> dict[str, Registe
 
     discovered: dict[str, RegisteredDataset] = {}
     if not data_root.is_dir():
-        raise ValueError(f"auto_discover needs data_root to be a directory: {data_root}")
+        raise ValueError(describe_bad_root(data_root))
     for child in sorted(data_root.iterdir()):
         if not child.is_dir():
             continue
@@ -110,6 +135,53 @@ def discover_datasets(data_root: Path, options: Any = True) -> dict[str, Registe
             continue
         discovered[name] = RegisteredDataset(name=name, source_path=child, kind="dir")
     return discovered
+
+
+def describe_bad_root(data_root: Path) -> str:
+    """Explain precisely why ``data_root`` cannot be scanned.
+
+    A bare "not a directory" is useless for diagnosis: a typo, a file, a
+    broken symlink and an unreadable mount all look identical. Naming the
+    first component that goes missing, and listing what does exist beside
+    it, turns a guessing game into a one-look fix.
+    """
+
+    if data_root.is_symlink() and not data_root.exists():
+        target = os.readlink(data_root)
+        return f"auto_discover: data_root {data_root} is a broken symlink pointing at {target}"
+    if data_root.is_file():
+        return f"auto_discover: data_root {data_root} is a file, not a directory"
+    if data_root.exists():
+        return (
+            f"auto_discover: data_root {data_root} exists but cannot be listed as a directory "
+            "(check permissions, or whether the mount is present in this shell)"
+        )
+
+    ancestor = data_root
+    while not ancestor.exists() and ancestor != ancestor.parent:
+        ancestor = ancestor.parent
+    missing = data_root
+    while missing.parent != ancestor and missing.parent != missing:
+        missing = missing.parent
+
+    message = [
+        f"auto_discover: data_root {data_root} does not exist",
+        f"  the path is fine up to {ancestor}",
+        f"  but {missing.name!r} is not there",
+    ]
+    try:
+        siblings = sorted(item.name for item in ancestor.iterdir())
+    except OSError as exc:
+        message.append(f"  and {ancestor} could not be listed ({exc})")
+        return "\n".join(message)
+
+    close = [name for name in siblings if name.lower() == missing.name.lower()]
+    if close:
+        message.append(f"  did you mean {close[0]!r}? (case differs)")
+    shown = siblings[:20]
+    listing = ", ".join(shown) + (f", ... (+{len(siblings) - len(shown)} more)" if len(siblings) > len(shown) else "")
+    message.append(f"  {ancestor} contains: {listing or '(empty)'}")
+    return "\n".join(message)
 
 
 def resolve_dataset_selection(registry: DatasetRegistry, selection: list[Any]) -> list[RegisteredDataset]:

@@ -276,6 +276,14 @@ FineVision 那种「一个数据集一个目录、几百个目录」的结构，
 
 `include` 和 `exclude` 都按目录名精确匹配。显式写在 `datasets` 里的条目会覆盖同名的自动发现结果。
 
+跑之前先确认注册表解析成了什么：
+
+```bash
+python -m finevision_to_sharegpt list-datasets --config configs/translate_zips.json --limit 10
+```
+
+会列出每个数据集的名字、形式、parquet 分片数和体积。**如果 `total` 只有 1 而你预期几百个，说明 `data_root` 指高了一层** —— 父目录被当成了一个巨型数据集。
+
 任务配置：
 
 ```json
