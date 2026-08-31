@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .db.config import MysqlConfig, load_mysql_config
+
 
 @dataclass(frozen=True)
 class BackendSpec:
@@ -63,6 +65,8 @@ class ZipTaskConfig:
     limit_per_dataset: int | None = None
     resume: bool = True
     emit_raw: bool = True
+    mysql: MysqlConfig | None = None
+    batch_id: str | None = None
 
 
 def load_backend_config(path: Path | str) -> BackendPoolConfig:
@@ -126,6 +130,8 @@ def load_zip_task_config(path: Path | str) -> ZipTaskConfig:
         limit_per_dataset=int(data["limit_per_dataset"]) if data.get("limit_per_dataset") is not None else None,
         emit_raw=bool(data.get("emit_raw", True)),
         resume=bool(data.get("resume", True)),
+        mysql=load_mysql_config(data.get("mysql")),
+        batch_id=str(data["batch_id"]) if data.get("batch_id") else None,
     )
 
 

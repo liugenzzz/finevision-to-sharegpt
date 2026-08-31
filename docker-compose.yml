@@ -1,0 +1,25 @@
+# Local MySQL for developing and testing db mode.
+# Production runs point `mysql.host` at your own instance instead.
+services:
+  mysql:
+    image: mysql:8.0
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${FV_MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${FV_MYSQL_DATABASE:-finevision}
+      MYSQL_USER: ${FV_MYSQL_USER:-fv}
+      MYSQL_PASSWORD: ${FV_MYSQL_PASSWORD:-fv}
+    ports:
+      - "${FV_MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mysql_data:

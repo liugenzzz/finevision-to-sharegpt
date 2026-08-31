@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
@@ -10,14 +11,16 @@ from typing import Any
 from tqdm import tqdm
 
 from .backend_pool import TranslationBackendPool
-from .config_loader import load_backend_config, load_translate_json_config, load_zip_task_config
 from .concurrency import DynamicLimiter, resolve_concurrency
+from .config_loader import load_backend_config, load_translate_json_config, load_zip_task_config
+from .db_commands import prompt_version, run_db_export, run_db_init, run_db_status
 from .json_io import append_jsonl, iter_json_records, merge_jsonl_files, truncate_file
 from .qwen_client import QwenClient
 from .translation_job import TranslationTask, record_to_source_sample, run_translation_job_with_backend_pool
 from .translator import DEFAULT_SAMPLE_PROMPT, DEFAULT_UTTERANCE_PROMPT, load_prompt, translate_sample
 from .validator import iter_records, validate_file
 from .zip_pipeline import run_export_zips as run_export_zips_config
+from .zip_pipeline import run_scan_zips as run_scan_zips_config
 from .zip_pipeline import run_translate_zips as run_translate_zips_config
 
 
@@ -62,6 +65,23 @@ def build_parser() -> argparse.ArgumentParser:
     merge = subparsers.add_parser("merge", help="merge JSONL files with stable id deduplication")
     merge.add_argument("--inputs", nargs="+", required=True)
     merge.add_argument("--output", required=True)
+
+    db_init = subparsers.add_parser("db-init", help="create MySQL tables and per-dataset views")
+    db_init.add_argument("--config", required=True)
+
+    db_scan = subparsers.add_parser("db-scan", help="ingest source rows into MySQL without translating")
+    db_scan.add_argument("--config", required=True)
+
+    db_export = subparsers.add_parser("db-export", help="export finished rows from MySQL as ShareGPT JSONL")
+    db_export.add_argument("--config", required=True)
+    db_export.add_argument("--output", required=True)
+    db_export.add_argument("--dataset")
+    db_export.add_argument("--batch-id")
+    db_export.add_argument("--lang", choices=["zh", "en"])
+
+    db_status = subparsers.add_parser("db-status", help="show per-dataset row counts by status")
+    db_status.add_argument("--config", required=True)
+    db_status.add_argument("--dataset")
     return parser
 
 
@@ -95,6 +115,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "export-zips":
         stats = run_export_zips_config(load_zip_task_config(args.config), progress_factory=tqdm)
         print(json.dumps(stats, ensure_ascii=False))
+        return 0
+    if args.command == "db-init":
+        print(json.dumps(run_db_init(args.config), ensure_ascii=False))
+        return 0
+    if args.command == "db-scan":
+        stats = run_scan_zips_config(load_zip_task_config(args.config), progress_factory=tqdm)
+        print(json.dumps(stats, ensure_ascii=False))
+        return 0
+    if args.command == "db-export":
+        stats = run_db_export(
+            args.config,
+            args.output,
+            dataset=args.dataset,
+            batch_id=args.batch_id,
+            lang=args.lang,
+        )
+        print(json.dumps(stats, ensure_ascii=False))
+        return 0
+    if args.command == "db-status":
+        print(json.dumps(run_db_status(args.config, args.dataset), ensure_ascii=False))
         return 0
     raise ValueError(f"unknown command: {args.command}")
 
@@ -157,6 +197,7 @@ def run_translate_zips_from_config(config_path: Path | str) -> dict[str, Any]:
     utterance_prompt = load_prompt(config.utterance_prompt_file, DEFAULT_UTTERANCE_PROMPT)
 
     def handler(task: TranslationTask, client: Any, timeout: int) -> dict[str, Any]:
+        started = time.monotonic()
         result = translate_sample(
             client,
             task.sample,
@@ -165,11 +206,22 @@ def run_translate_zips_from_config(config_path: Path | str) -> dict[str, Any]:
             utterance_prompt=utterance_prompt,
             timeout=timeout,
         )
+        if task.metadata is not None:
+            task.metadata["latency_ms"] = int((time.monotonic() - started) * 1000)
         if not result.ok:
             raise RuntimeError(result.error or "translation failed")
         return result.record
 
-    return run_translate_zips_config(config, pool, handler, progress_factory=tqdm)
+    return run_translate_zips_config(
+        config,
+        pool,
+        handler,
+        progress_factory=tqdm,
+        translation_meta={
+            "models_by_backend": {backend.name: backend.model for backend in backend_config.backends},
+            "prompt_version": prompt_version(sample_prompt, utterance_prompt),
+        },
+    )
 
 
 def _make_backend_pool(backend_config: Any) -> TranslationBackendPool:
