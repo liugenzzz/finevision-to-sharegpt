@@ -376,7 +376,25 @@ def test_lean_ledger_skips_source_text_but_still_dedupes(tmp_path, clean_databas
     assert len(records) == 2
     assert all(record["conversations"][1]["value"] for record in records)
 
-    # But the database can no longer rebuild ShareGPT on its own, and says so.
+    # Untranslated English cannot be rebuilt from the ledger, and it says so.
     export = run_db_export(scan_path, tmp_path / "exported.jsonl")
     assert export["written"] == 0
-    assert "store_conversations is false" in export["note"]
+    assert "no source text in the ledger" in export["note"]
+
+
+def test_lean_ledger_still_exports_translated_samples(tmp_path, clean_database, mysql_settings):
+    """The translation table is unaffected, so translated rows export fine."""
+
+    lean = {**mysql_settings, "store_conversations": False}
+    registry = make_zip_dataset(tmp_path, rows=3)
+    config, config_path = write_config(tmp_path, registry, lean, chinese_ratio=1.0)
+
+    run_translate_zips(config, _SuccessfulPool(), _handler)
+    export = run_db_export(config_path, tmp_path / "exported.jsonl")
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "exported.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert export["written"] == 3
+    assert all(record["conversations"][1]["value"] == "答" for record in records)

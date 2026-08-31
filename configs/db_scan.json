@@ -1,6 +1,8 @@
 {
   "dataset_registry": "configs/datasets.json",
-  "datasets": ["*"],
+  "datasets": [
+    "*"
+  ],
   "output_jsonl": "output/scan/placeholder.jsonl",
   "limit_per_dataset": null,
   "resume": true,
@@ -13,6 +15,7 @@
     "batch_size": 200,
     "flush_interval_seconds": 5,
     "claim_ttl_seconds": 3600,
-    "on_connect_error": "fail"
+    "on_connect_error": "fail",
+    "store_conversations": false
   }
 }

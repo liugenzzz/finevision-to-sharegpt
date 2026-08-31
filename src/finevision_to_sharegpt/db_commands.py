@@ -98,13 +98,14 @@ def run_db_export(
         "output_jsonl": str(output_jsonl),
         "output_json": str(output_json),
     }
-    if written == 0 and config.mysql is not None and not config.mysql.store_conversations:
-        # Otherwise this looks like an empty database rather than a deliberate
-        # choice not to keep the source text.
+    if config.mysql is not None and not config.mysql.store_conversations:
+        # Translations live in sample_translation and are unaffected, so only
+        # the untranslated English side is missing. Saying "nothing can be
+        # exported" would be wrong.
         result["note"] = (
-            "mysql.store_conversations is false, so the ledger holds no source text and "
-            "db-export cannot rebuild records from it. Export from the pipeline's own "
-            "jsonl output instead, or re-scan with store_conversations enabled."
+            "mysql.store_conversations is false: translated samples export normally, "
+            "but samples still in English have no source text in the ledger and are "
+            "skipped. Take those from the pipeline's own jsonl output."
         )
     return result
 
