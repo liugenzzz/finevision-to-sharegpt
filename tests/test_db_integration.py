@@ -247,3 +247,43 @@ def test_expired_claims_are_recovered_on_the_next_run(tmp_path, clean_database, 
         "okvqa:nested/part.parquet:2",
     ]
     assert run_db_status(second_path)["totals"] == {"done": 4}
+
+
+def test_scan_without_images_defers_the_files_but_keeps_the_paths(
+    tmp_path, clean_database, mysql_settings
+):
+    registry = make_zip_dataset(tmp_path, rows=6)
+    scan_config, scan_path = write_config(tmp_path, registry, mysql_settings, name="scan.json")
+    use_config, _ = write_config(
+        tmp_path, registry, mysql_settings, name="use.json", limit_per_dataset=2
+    )
+
+    run_scan_zips(scan_config, write_images=False)
+    scanned_images = sorted(path.name for path in tmp_path.rglob("*.jpg"))
+    recorded = json.loads(
+        _query_one(mysql_settings, "SELECT image_paths FROM sample_source ORDER BY row_index LIMIT 1")
+    )
+
+    assert run_db_status(scan_path)["totals"] == {"pending": 6}
+    assert scanned_images == []
+
+    run_export_zips(use_config)
+    written = sorted(path.name for path in use_config.images_root.rglob("*.jpg"))
+
+    # Only the consumed samples materialise, and at the path the scan recorded.
+    assert len(written) == 2
+    assert (use_config.images_root.parent / recorded[0]).exists() == (recorded[0].split("/")[-1] in written)
+
+
+def _query_one(mysql_settings, sql):
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+
+    ledger = MySQLLedger(load_mysql_config(mysql_settings))
+    try:
+        def query(cursor):
+            cursor.execute(sql)
+            return cursor.fetchone()[0]
+
+        return ledger.pool.run(query)
+    finally:
+        ledger.close()

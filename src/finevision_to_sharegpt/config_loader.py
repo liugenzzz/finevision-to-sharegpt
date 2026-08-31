@@ -16,6 +16,7 @@ class BackendSpec:
     api_key: str
     concurrency: int
     weight: float = 1.0
+    extra_body: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,7 @@ def load_backend_config(path: Path | str) -> BackendPoolConfig:
             api_key=str(item.get("api_key", "sk-local")),
             concurrency=max(1, int(item.get("concurrency", 1))),
             weight=float(item.get("weight", 1)),
+            extra_body=dict(item["extra_body"]) if item.get("extra_body") else None,
         )
         for item in data.get("backends", [])
     ]

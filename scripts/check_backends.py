@@ -16,9 +16,10 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import base64
 import json
-import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -31,7 +32,7 @@ TINY_JPEG = base64.b64decode(
 )
 
 
-def probe(backend: dict, timeout: int, with_image: bool) -> tuple[bool, str]:
+def probe(backend: dict, timeout: int, with_image: bool) -> tuple[bool, str, float]:
     content: list[dict] = [{"type": "text", "text": "Reply with the single word: ok"}]
     if with_image:
         encoded = base64.b64encode(TINY_JPEG).decode("ascii")
@@ -41,6 +42,7 @@ def probe(backend: dict, timeout: int, with_image: bool) -> tuple[bool, str]:
         "messages": [{"role": "user", "content": content}],
         "max_tokens": 16,
     }
+    started = time.monotonic()
     try:
         response = httpx.post(
             backend["api_base"],
@@ -49,25 +51,43 @@ def probe(backend: dict, timeout: int, with_image: bool) -> tuple[bool, str]:
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=timeout,
+            # Separate budgets: a refused connection is a wrong address, a
+            # connection that opens then stalls is a slow or cold model.
+            timeout=httpx.Timeout(connect=10.0, read=timeout, write=30.0, pool=10.0),
         )
+    except httpx.ConnectError as exc:
+        return False, f"cannot reach the host: {exc}", time.monotonic() - started
+    except httpx.ConnectTimeout:
+        return False, "connection timed out: host is not answering", time.monotonic() - started
+    except httpx.ReadTimeout:
+        elapsed = time.monotonic() - started
+        return False, f"connected, but no reply within {elapsed:.0f}s", elapsed
     except Exception as exc:
-        return False, f"{type(exc).__name__}: {exc}"
+        return False, f"{type(exc).__name__}: {exc}", time.monotonic() - started
+    elapsed = time.monotonic() - started
     if response.status_code != 200:
         body = response.text.strip().replace("\n", " ")
-        return False, f"HTTP {response.status_code}: {body[:300]}"
+        return False, f"HTTP {response.status_code}: {body[:300]}", elapsed
     try:
         reply = response.json()["choices"][0]["message"]["content"]
     except Exception:
-        return False, f"unexpected response shape: {response.text[:300]}"
-    return True, str(reply).strip()[:120]
+        return False, f"unexpected response shape: {response.text[:300]}", elapsed
+    return True, str(reply).strip().replace("\n", " ")[:100], elapsed
 
 
-def main(argv: list[str]) -> int:
-    config_path = Path(argv[1] if len(argv) > 1 else "configs/backend_config.json")
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="probe the backends in a backend config")
+    parser.add_argument("config", nargs="?", default="configs/backend_config.json")
+    parser.add_argument("--timeout", type=int, help="read timeout in seconds (default: request_timeout)")
+    parser.add_argument("--only", help="probe just this backend name")
+    args = parser.parse_args(argv)
+
+    config_path = Path(args.config)
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    timeout = int(config.get("request_timeout", 120))
+    timeout = args.timeout or int(config.get("request_timeout", 120))
     backends = config.get("backends") or []
+    if args.only:
+        backends = [item for item in backends if item.get("name") == args.only]
     if not backends:
         print(f"{config_path} declares no backends")
         return 1
@@ -85,13 +105,26 @@ def main(argv: list[str]) -> int:
             failures += 1
             continue
 
-        ok_text, detail_text = probe(backend, timeout, with_image=False)
-        print(f"    text  : {'OK' if ok_text else 'FAIL'}  {detail_text}")
-        ok_image, detail_image = probe(backend, timeout, with_image=True)
-        print(f"    image : {'OK' if ok_image else 'FAIL'}  {detail_image}")
+        ok_text, detail_text, secs_text = probe(backend, timeout, with_image=False)
+        print(f"    text  : {'OK' if ok_text else 'FAIL'}  [{secs_text:5.1f}s]  {detail_text}")
+        ok_image, detail_image, secs_image = probe(backend, timeout, with_image=True)
+        print(f"    image : {'OK' if ok_image else 'FAIL'}  [{secs_image:5.1f}s]  {detail_image}")
+
         if ok_text and not ok_image:
             print("    [fatal] this model rejects images. Translation sends every sample's")
             print("            images, so it would fail on all of them. Use a vision model.")
+        if not ok_text and "no reply within" in detail_text:
+            print("    [hint] the route exists (a GET returns 405 Method Not Allowed) but")
+            print("           inference is slow or the deployment is cold. Retry with")
+            print(f"           --timeout {max(timeout * 3, 300)} --only {name}, and if it only")
+            print("           answers slowly, give it a low concurrency or drop it.")
+        if ok_text and secs_text > 30:
+            print(f"    [warn] {secs_text:.0f}s for a 16-token reply; raise request_timeout")
+            print("           and keep concurrency low for this backend")
+        if "<think>" in detail_text or "<think>" in detail_image:
+            print("    [note] this model emits reasoning blocks; they are stripped before")
+            print("           parsing. Set extra_body.chat_template_kwargs.enable_thinking")
+            print("           to false to stop paying for tokens that get discarded.")
         if not (ok_text and ok_image):
             failures += 1
 
@@ -101,4 +134,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main())

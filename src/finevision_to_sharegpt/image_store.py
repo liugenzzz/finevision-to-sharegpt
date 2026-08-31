@@ -19,18 +19,30 @@ class ImageStore:
         self.output_root = Path(output_root)
         self.images_dir = images_dir.strip("/")
 
-    def save(self, data: bytes, dataset_name: str | None = None) -> str:
+    def relative_path(self, data: bytes, dataset_name: str | None = None) -> str:
+        """Where this image belongs, without touching the filesystem.
+
+        The name is the content hash, so the path is known from the bytes
+        alone. That lets a metadata-only scan record correct paths and leave
+        the pixels on disk for whoever actually consumes the sample.
+        """
+
         digest = hashlib.sha256(data).hexdigest()
         ext = detect_image_extension(data)
         relative_dir = Path(self.images_dir)
         if dataset_name:
             relative_dir = relative_dir / _safe_path_part(dataset_name)
-        relative_path = relative_dir / f"{digest}.{ext}"
+        return (relative_dir / f"{digest}.{ext}").as_posix()
+
+    def save(self, data: bytes, dataset_name: str | None = None, write: bool = True) -> str:
+        relative_path = self.relative_path(data, dataset_name)
+        if not write:
+            return relative_path
         absolute_path = self.output_root / relative_path
         absolute_path.parent.mkdir(parents=True, exist_ok=True)
         if not absolute_path.exists():
             absolute_path.write_bytes(data)
-        return relative_path.as_posix()
+        return relative_path
 
 
 def _safe_path_part(value: str) -> str:

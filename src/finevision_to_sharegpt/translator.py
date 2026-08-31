@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,49 @@ DEFAULT_UTTERANCE_PROMPT = """你是一名专业翻译助手。请将下面英�
 待翻译内容：
 {input}
 """
+
+
+_THINK_PAIR = re.compile(r"<think\b[^>]*>.*?</think\s*>", re.DOTALL | re.IGNORECASE)
+_THINK_CLOSE = re.compile(r"</think\s*>", re.IGNORECASE)
+_THINK_OPEN = re.compile(r"<think\b[^>]*>", re.IGNORECASE)
+_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
+
+
+def strip_reasoning(text: str) -> str:
+    """Drop a reasoning model's ``<think>`` block, keeping only the answer.
+
+    Qwen3-style deployments emit reasoning before the answer, and many chat
+    templates pre-open the tag so only ``</think>`` comes back. Left in, the
+    JSON parse fails, the per-utterance fallback fires (three model calls
+    instead of one) and the reasoning text itself gets stored as the
+    translation while the record still reports success.
+    """
+
+    cleaned = _THINK_PAIR.sub("", text)
+    closes = list(_THINK_CLOSE.finditer(cleaned))
+    if closes:
+        # A pre-opened tag leaves a bare close: the answer follows the last one.
+        cleaned = cleaned[closes[-1].end():]
+    opens = list(_THINK_OPEN.finditer(cleaned))
+    if opens:
+        # Unterminated block: the response was cut off mid-reasoning.
+        cleaned = cleaned[: opens[0].start()]
+    return cleaned.strip()
+
+
+def extract_json_object(text: str) -> Any:
+    """Parse the JSON object out of a reply that may carry prose or fences."""
+
+    candidate = _CODE_FENCE.sub("", strip_reasoning(text)).strip()
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        pass
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start == -1 or end <= start:
+        raise ValueError("model response did not contain a JSON object")
+    return json.loads(candidate[start : end + 1])
 
 
 def load_prompt(path: Path | str | None, default: str) -> str:
@@ -97,7 +141,9 @@ def _turns_json(sample: SourceSample) -> str:
 
 
 def _parse_conversations(response: str, sample: SourceSample) -> list[dict[str, str]]:
-    data = json.loads(response)
+    data = extract_json_object(response)
+    if not isinstance(data, dict):
+        raise ValueError("model JSON was not an object")
     conversations = data.get("conversations")
     if not isinstance(conversations, list):
         raise ValueError("model JSON did not include conversations")
@@ -133,7 +179,10 @@ def _fallback_translate(
             image_bytes=sample.image_bytes_list,
             timeout=timeout,
         )
-        conversations.append({"from": turn.role, "value": _strip_image_token(translated.strip())})
+        cleaned = strip_reasoning(translated)
+        if not cleaned.strip():
+            raise ValueError("model returned only reasoning, no translation")
+        conversations.append({"from": turn.role, "value": _strip_image_token(cleaned.strip())})
     return conversations
 
 

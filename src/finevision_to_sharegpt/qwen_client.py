@@ -22,11 +22,16 @@ class QwenClient:
         api_key: str,
         model: str,
         http_client: Any | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         self.api_base = api_base
         self.api_key = api_key
         self.model = model
         self.http_client = http_client or httpx.Client()
+        # Merged into every request body: lets a deployment turn off reasoning
+        # (``chat_template_kwargs.enable_thinking``), cap tokens, set
+        # temperature, and so on without a code change.
+        self.extra_body = dict(extra_body or {})
 
     def chat(self, prompt: str, image_bytes: bytes | list[bytes], timeout: int = 120) -> str:
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
@@ -37,7 +42,7 @@ class QwenClient:
                     "image_url": {"url": _data_url(item)},
                 }
             )
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {
@@ -46,6 +51,7 @@ class QwenClient:
                 }
             ],
         }
+        payload.update(self.extra_body)
         response = self.http_client.post(
             self.api_base,
             headers={

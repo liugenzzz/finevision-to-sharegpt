@@ -83,6 +83,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     db_scan = subparsers.add_parser("db-scan", help="ingest source rows into MySQL without translating")
     db_scan.add_argument("--config", required=True)
+    db_scan.add_argument(
+        "--no-images",
+        dest="write_images",
+        action="store_false",
+        default=True,
+        help="record image paths but do not write the image files",
+    )
 
     db_export = subparsers.add_parser("db-export", help="export finished rows from MySQL as ShareGPT JSONL")
     db_export.add_argument("--config", required=True)
@@ -135,7 +142,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(run_db_init(args.config), ensure_ascii=False))
         return 0
     if args.command == "db-scan":
-        stats = run_scan_zips_config(load_zip_task_config(args.config), progress_factory=tqdm)
+        stats = run_scan_zips_config(
+            load_zip_task_config(args.config),
+            progress_factory=tqdm,
+            write_images=args.write_images,
+        )
         print(json.dumps(stats, ensure_ascii=False))
         return 0
     if args.command == "db-export":
@@ -242,7 +253,9 @@ def run_translate_zips_from_config(config_path: Path | str) -> dict[str, Any]:
 def _make_backend_pool(backend_config: Any) -> TranslationBackendPool:
     return TranslationBackendPool(
         backend_config,
-        client_factory=lambda backend: QwenClient(backend.api_base, backend.api_key, backend.model),
+        client_factory=lambda backend: QwenClient(
+            backend.api_base, backend.api_key, backend.model, extra_body=backend.extra_body
+        ),
     )
 
 

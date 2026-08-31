@@ -257,6 +257,7 @@ def _iter_dataset_rows(
     limit_reached: Any,
     claim_status: str = "claimed",
     progress_state: dict[str, Any] | None = None,
+    write_images: bool = True,
 ) -> Any:
     overall = _overall_progress(datasets, progress_factory, description_prefix)
     if progress_state is not None:
@@ -300,7 +301,7 @@ def _iter_dataset_rows(
                     _update_zip_progress(progress, dataset_stats)
                     continue
                 image_paths = [
-                    image_store.save(image_bytes, dataset_name=dataset.name)
+                    image_store.save(image_bytes, dataset_name=dataset.name, write=write_images)
                     for image_bytes in parsed.sample.image_bytes_list
                 ]
                 ledger.claim(
@@ -550,12 +551,21 @@ def _write_reject(
     )
 
 
-def run_scan_zips(config: ZipTaskConfig, progress_factory: Any | None = None) -> dict[str, Any]:
+def run_scan_zips(
+    config: ZipTaskConfig,
+    progress_factory: Any | None = None,
+    write_images: bool = True,
+) -> dict[str, Any]:
     """Ingest source samples into MySQL without producing ShareGPT output.
 
     Rows land as ``pending`` so a later ``translate-zips`` or ``export-zips``
-    run claims them normally. Images are still written, because
-    ``image_paths`` has to point at files that exist.
+    run claims them normally.
+
+    ``write_images=False`` records the image paths but leaves the files
+    unwritten. Paths are content hashes derived from bytes already in memory,
+    so they stay correct, and whichever run later consumes a sample writes
+    its images then. On a tree where only a fraction of the samples will ever
+    be used, that avoids materialising terabytes nobody reads.
     """
 
     if config.mysql is None:
@@ -580,6 +590,7 @@ def run_scan_zips(config: ZipTaskConfig, progress_factory: Any | None = None) ->
             stats_factory=lambda: {"processed": 0, "written": 0, "rejected": 0, "skipped": 0},
             limit_reached=lambda stats, limit: stats["written"] >= limit,
             claim_status="pending",
+            write_images=write_images,
         ):
             totals["written"] += 1
             item.stats["written"] += 1

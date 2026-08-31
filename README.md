@@ -114,6 +114,26 @@ python -m finevision_to_sharegpt translate-zips --config configs/translate_zips.
 
 ### backend 配置
 
+`api_base` 必须是完整的 `/v1/chat/completions`，模型清单给的 Base URL 通常只到 `/v1`。
+
+推理型模型（会输出 `<think>` 块）需要额外注意：解析前会自动剥掉 `<think>` 内容，
+所以不配也能跑对；但那些推理 token 是白花的，建议用 `extra_body` 直接关掉：
+
+```json
+{ "extra_body": { "chat_template_kwargs": { "enable_thinking": false } } }
+```
+
+`extra_body` 会原样合并进请求体，也可以用来设 `temperature`、`max_tokens` 等。
+
+填好后先探活：
+
+```bash
+python scripts/check_backends.py configs/backend_config.json
+```
+
+会分别用纯文本和带图请求探测每个 backend，报告耗时，并区分「连不上」和
+「连上了但没在超时内回复」。慢的后端用 `--timeout 600 --only <名字>` 单独重试。
+
 涉及翻译的功能都需要 backend 配置，直接编辑：
 
 ```text

@@ -346,3 +346,24 @@ def test_directory_dataset_resumes_without_repeating(tmp_path):
     assert first["written"] == 3
     assert second["written"] == 3
     assert len(ids) == len(set(ids)) == 6
+
+
+# -- metadata-only scan ------------------------------------------------------
+
+
+def test_image_store_can_plan_a_path_without_writing(tmp_path):
+    from finevision_to_sharegpt.image_store import ImageStore
+
+    store = ImageStore(output_root=tmp_path, images_dir="images")
+    data = b"\xff\xd8\xffpayload"
+
+    planned = store.relative_path(data, dataset_name="okvqa")
+    deferred = store.save(data, dataset_name="okvqa", write=False)
+
+    assert planned == deferred
+    assert not (tmp_path / planned).exists()
+
+    written = store.save(data, dataset_name="okvqa")
+    # The path a metadata-only scan recorded is the one the real write uses.
+    assert written == planned
+    assert (tmp_path / written).read_bytes() == data
