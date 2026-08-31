@@ -399,6 +399,47 @@ class MySQLLedger(ConsumptionLedger):
 
         return self.pool.run(query)
 
+    def storage_report(self) -> dict[str, Any]:
+        """Row counts and on-disk size per table.
+
+        Ingesting a multi-terabyte tree makes the database itself a capacity
+        question, so the numbers to extrapolate from should be one command
+        away rather than a hand-written information_schema query.
+        """
+
+        def query(cursor: Any) -> dict[str, Any]:
+            cursor.execute(
+                "SELECT table_name, table_rows, "
+                "       ROUND((data_length + index_length) / 1024 / 1024, 1) AS mb "
+                "  FROM information_schema.tables "
+                " WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
+                " ORDER BY (data_length + index_length) DESC"
+            )
+            tables = [
+                {"table": row[0], "approx_rows": int(row[1] or 0), "size_mb": float(row[2] or 0)}
+                for row in cursor.fetchall()
+            ]
+            cursor.execute("SELECT COUNT(*) FROM sample_source")
+            exact = int(cursor.fetchone()[0])
+            total_mb = round(sum(item["size_mb"] for item in tables), 1)
+            report: dict[str, Any] = {
+                "tables": tables,
+                "sample_source_rows": exact,
+                "total_mb": total_mb,
+                "bytes_per_row": round(total_mb * 1024 * 1024 / exact, 1) if exact else 0,
+            }
+            if exact < 10000:
+                # Page and index overhead dominates a small table, so the
+                # per-row figure only becomes projectable once the load is
+                # large enough to amortise it.
+                report["note"] = (
+                    f"only {exact} rows: bytes_per_row is dominated by page overhead. "
+                    "Scan at least ~100k rows before projecting a full load."
+                )
+            return report
+
+        return self.pool.run(query)
+
     def iter_export_records(
         self,
         dataset: str | None = None,

@@ -18,6 +18,7 @@ from .db_commands import (
     run_db_export,
     run_db_init,
     run_db_status,
+    run_db_storage,
     run_list_datasets,
 )
 from .json_io import append_jsonl, iter_json_records, merge_jsonl_files, truncate_file
@@ -101,6 +102,9 @@ def build_parser() -> argparse.ArgumentParser:
     db_status = subparsers.add_parser("db-status", help="show per-dataset row counts by status")
     db_status.add_argument("--config", required=True)
     db_status.add_argument("--dataset")
+
+    db_storage = subparsers.add_parser("db-storage", help="show table sizes and bytes per row")
+    db_storage.add_argument("--config", required=True)
     return parser
 
 
@@ -161,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "db-status":
         print(json.dumps(run_db_status(args.config, args.dataset), ensure_ascii=False))
+        return 0
+    if args.command == "db-storage":
+        print(json.dumps(run_db_storage(args.config), ensure_ascii=False, indent=2))
         return 0
     raise ValueError(f"unknown command: {args.command}")
 

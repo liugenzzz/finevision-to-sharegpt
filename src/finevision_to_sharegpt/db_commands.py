@@ -60,6 +60,17 @@ def run_db_status(config_path: Path | str, dataset: str | None = None) -> dict[s
     return {"rows": rows, "totals": totals}
 
 
+def run_db_storage(config_path: Path | str) -> dict[str, Any]:
+    """Report how much space the ledger occupies, for extrapolating a big load."""
+
+    config = load_zip_task_config(config_path)
+    ledger = _ledger(config)
+    try:
+        return ledger.storage_report()
+    finally:
+        ledger.close()
+
+
 def run_db_export(
     config_path: Path | str,
     output: Path | str,

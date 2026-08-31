@@ -1,0 +1,18 @@
+{
+  "dataset_registry": "configs/datasets.json",
+  "datasets": ["CoSyn_400k_chart"],
+  "output_jsonl": "output/scan/placeholder.jsonl",
+  "limit_per_dataset": null,
+  "resume": true,
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "batch_size": 200,
+    "flush_interval_seconds": 5,
+    "claim_ttl_seconds": 3600,
+    "on_connect_error": "fail"
+  }
+}
