@@ -24,6 +24,7 @@ class MysqlConfig:
     claim_ttl_seconds: int = 3600
     on_connect_error: str = "fallback"
     connect_timeout: int = 10
+    store_conversations: bool = True
 
     @property
     def fail_fast(self) -> bool:
@@ -77,4 +78,5 @@ def load_mysql_config(data: dict[str, Any] | None) -> MysqlConfig | None:
         claim_ttl_seconds=max(1, int(data.get("claim_ttl_seconds", 3600))),
         on_connect_error=on_connect_error,
         connect_timeout=max(1, int(data.get("connect_timeout", 10))),
+        store_conversations=bool(data.get("store_conversations", True)),
     )

@@ -93,6 +93,9 @@ class MySQLLedger(ConsumptionLedger):
     ) -> None:
         self.config = config
         self.batch_id = batch_id
+        # With store_conversations off the table is a pure ledger: ids, image
+        # paths and status. The English text stays in the parquet, so the rows
+        # dedupe and resume exactly the same but cost a fraction of the disk.
         self.completed_ids = completed_ids if completed_ids is not None else set()
         self.pool = ConnectionPool(config)
         if ensure_schema:
@@ -263,7 +266,9 @@ class MySQLLedger(ConsumptionLedger):
                 sample_id,
                 parquet_name,
                 row_index,
-                json.dumps(conversations, ensure_ascii=False),
+                json.dumps(conversations, ensure_ascii=False)
+                if self.config.store_conversations
+                else None,
                 json.dumps(image_paths, ensure_ascii=False),
                 len(image_paths),
                 status,
@@ -421,13 +426,37 @@ class MySQLLedger(ConsumptionLedger):
             ]
             cursor.execute("SELECT COUNT(*) FROM sample_source")
             exact = int(cursor.fetchone()[0])
+            columns: dict[str, float] = {}
+            if exact:
+                # Where the bytes actually go. The English text in
+                # `conversations` normally dwarfs everything else, and it is
+                # the one column a mapping-only ledger would not need.
+                cursor.execute(
+                    "SELECT ROUND(AVG(LENGTH(conversations)), 1), "
+                    "       ROUND(AVG(LENGTH(image_paths)), 1), "
+                    "       ROUND(AVG(LENGTH(sample_id) + LENGTH(dataset) + LENGTH(parquet_name)), 1) "
+                    "  FROM sample_source"
+                )
+                row = cursor.fetchone()
+                columns = {
+                    "conversations": float(row[0] or 0),
+                    "image_paths": float(row[1] or 0),
+                    "identifiers": float(row[2] or 0),
+                }
             total_mb = round(sum(item["size_mb"] for item in tables), 1)
             report: dict[str, Any] = {
                 "tables": tables,
                 "sample_source_rows": exact,
                 "total_mb": total_mb,
                 "bytes_per_row": round(total_mb * 1024 * 1024 / exact, 1) if exact else 0,
+                "avg_bytes_by_column": columns,
             }
+            if columns:
+                text = columns["conversations"]
+                other = columns["image_paths"] + columns["identifiers"]
+                report["text_share_of_payload"] = (
+                    round(text / (text + other), 3) if text + other else 0
+                )
             if exact < 10000:
                 # Page and index overhead dominates a small table, so the
                 # per-row figure only becomes projectable once the load is

@@ -351,3 +351,32 @@ def test_concurrent_shards_ingest_disjoint_datasets(tmp_path, clean_database, my
     assert _query_one(
         mysql_settings, "SELECT COUNT(DISTINCT version_id, sample_id) FROM sample_source"
     ) == 18
+
+
+def test_lean_ledger_skips_source_text_but_still_dedupes(tmp_path, clean_database, mysql_settings):
+    """store_conversations=false turns the table into a pure mapping."""
+
+    lean = {**mysql_settings, "store_conversations": False}
+    registry = make_zip_dataset(tmp_path, rows=6)
+    scan_config, scan_path = write_config(tmp_path, registry, lean, name="scan.json")
+    use_config, _ = write_config(tmp_path, registry, lean, name="use.json", limit_per_dataset=2)
+
+    run_scan_zips(scan_config, write_images=False)
+    stored = _query_one(lean, "SELECT COUNT(*) FROM sample_source WHERE conversations IS NOT NULL")
+
+    assert run_db_status(scan_path)["totals"] == {"pending": 6}
+    assert stored == 0
+
+    # Consuming is unaffected: the text comes from the parquet, not the ledger.
+    run_export_zips(use_config)
+    records = [
+        json.loads(line)
+        for line in use_config.output_jsonl.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(records) == 2
+    assert all(record["conversations"][1]["value"] for record in records)
+
+    # But the database can no longer rebuild ShareGPT on its own, and says so.
+    export = run_db_export(scan_path, tmp_path / "exported.jsonl")
+    assert export["written"] == 0
+    assert "store_conversations is false" in export["note"]
