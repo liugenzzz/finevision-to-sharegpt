@@ -315,3 +315,39 @@ def test_pending_rows_are_still_claimable_after_a_scan(tmp_path, clean_database,
 
     # The ingest watermark must not hide pending rows from the consume path.
     assert run_db_status(scan_path)["totals"] == {"pending": 5, "done": 3}
+
+
+def test_concurrent_shards_ingest_disjoint_datasets(tmp_path, clean_database, mysql_settings):
+    """Sharding a bulk load by dataset needs no coordination between processes."""
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    root = tmp_path / "zips"
+    root.mkdir(exist_ok=True)
+    for name in ("alpha", "beta", "gamma"):
+        make_zip_dataset(tmp_path, rows=6, dataset_name=name)
+    registry = tmp_path / "datasets.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "data_root": str(root),
+                "datasets": {name: {"zip": f"{name}.zip"} for name in ("alpha", "beta", "gamma")},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def shard(name):
+        config, _ = write_config(
+            tmp_path, registry, mysql_settings, name=f"{name}.json", datasets=[name]
+        )
+        return run_scan_zips(config, write_images=False)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(shard, ("alpha", "beta", "gamma")))
+
+    assert [item["written"] for item in results] == [6, 6, 6]
+    assert _query_one(mysql_settings, "SELECT COUNT(*) FROM sample_source") == 18
+    assert _query_one(
+        mysql_settings, "SELECT COUNT(DISTINCT version_id, sample_id) FROM sample_source"
+    ) == 18
