@@ -1,14 +1,4 @@
 {
-  "data_root": "data/zips",
-  "datasets": {
-    "okvqa": {
-      "zip": "okvqa.zip"
-    },
-    "chartqa": {
-      "zip": "chartqa.zip"
-    },
-    "captcha": {
-      "zip": "captcha/captcha.zip"
-    }
-  }
+  "data_root": "/mnt/si003010kcx0/mmdata/mm_general/FineVision",
+  "auto_discover": true
 }

@@ -23,7 +23,7 @@
 - 数据集支持两种形式：zip 压缩包，或 FineVision 风格的 parquet 目录（就地读取，不占临时空间）。
 - 目录形式支持自动发现，几百个数据集不用逐个登记。
 - 支持多线程、多卡、多模型、多 backend 固定并发翻译。
-- 支持运行时进度条，显示 processed/written/failed/skipped 等统计。
+- 两级进度条：外层按数据集显示总进度和累计写入，内层按 parquet 分片显示行进度（跑完自动收起）。
 - 支持 backend 请求超时、重试、连续失败后临时禁用。
 - 支持数据集注册表，zip 任务只需要写数据集名字。
 - zip 抽取图片按数据集分目录保存：`images/<dataset_name>/<hash>.<ext>`。
@@ -275,6 +275,17 @@ FineVision 那种「一个数据集一个目录、几百个目录」的结构，
 ```
 
 `include` 和 `exclude` 都按目录名精确匹配。显式写在 `datasets` 里的条目会覆盖同名的自动发现结果。
+
+### 批量注册（把发现结果固化下来）
+
+`auto_discover` 是运行时扫描。想把结果固化成一份可编辑、可审查的注册表，用脚本生成：
+
+```bash
+python scripts/register_datasets.py /mnt/data/FineVision --dry-run   # 先看
+python scripts/register_datasets.py /mnt/data/FineVision -o configs/datasets.json
+```
+
+会逐个打印数据集的 parquet 分片数和体积，然后写出显式的 `datasets.json`。固化的好处是**锁定范围**：之后目录里多出或少掉什么，都不会悄悄改变任务覆盖的数据集。支持 `--include` / `--exclude` / `--min-files` / `--relative`。
 
 跑之前先确认注册表解析成了什么：
 

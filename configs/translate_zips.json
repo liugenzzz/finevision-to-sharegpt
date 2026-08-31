@@ -4,7 +4,7 @@
   "output_jsonl": "output/train.jsonl",
   "chinese_ratio": 1.0,
   "seed": 42,
-  "limit_per_dataset": null,
+  "limit_per_dataset": 100,
   "backend_config": "configs/backend_config.json",
   "sample_prompt_file": "prompts/translate_sample_zh.txt",
   "utterance_prompt_file": "prompts/translate_utterance_zh.txt",

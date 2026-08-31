@@ -139,24 +139,41 @@ def test_run_export_zips_updates_parquet_progress(tmp_path):
         def __init__(self):
             self.instances = []
 
-        def __call__(self, iterable, total, desc, unit):
-            progress = FakeProgress(iterable, total, desc, unit)
+        def __call__(self, iterable, total, desc, unit, **kwargs):
+            progress = FakeProgress(iterable, total, desc, unit, **kwargs)
             self.instances.append(progress)
             return progress
 
+        def of_unit(self, unit):
+            return [item for item in self.instances if item.unit == unit]
+
     class FakeProgress:
-        def __init__(self, iterable, total, desc, unit):
+        def __init__(self, iterable, total, desc, unit, leave=None, position=None):
             self.iterable = iterable
             self.total = total
             self.desc = desc
             self.unit = unit
+            self.leave = leave
+            self.position = position
             self.postfixes = []
+            self.descriptions = []
+            self.n = 0
+            self.closed = False
 
         def __iter__(self):
             yield from self.iterable
 
         def set_postfix(self, **kwargs):
-            self.postfixes.append(kwargs)
+            self.postfixes.append((self.n, kwargs))
+
+        def set_description(self, text):
+            self.descriptions.append(text)
+
+        def update(self, step):
+            self.n += step
+
+        def close(self):
+            self.closed = True
 
     registry = make_zip_dataset(tmp_path)
     config_path = tmp_path / "export.json"
@@ -175,9 +192,20 @@ def test_run_export_zips_updates_parquet_progress(tmp_path):
 
     run_export_zips(load_zip_task_config(config_path), progress_factory=progress_factory)
 
-    assert progress_factory.instances
-    assert progress_factory.instances[0].unit == "row"
-    assert progress_factory.instances[0].postfixes[-1]["written"] == 2
+    rows = progress_factory.of_unit("row")
+    overall = progress_factory.of_unit("dataset")
+    assert rows and rows[0].postfixes[-1][1]["written"] == 2
+    # Shard bars collapse when done; only the dataset bar stays on screen.
+    assert rows[0].leave is False
+    assert len(overall) == 1
+    assert overall[0].total == 1
+    assert overall[0].leave is True
+    assert overall[0].descriptions == ["[okvqa] of 1 datasets"]
+    assert overall[0].postfixes[-1][1]["written"] == 2
+    # The bar is driven by hand, so its count is correct at every redraw.
+    assert overall[0].iterable is None
+    assert overall[0].n == 1
+    assert overall[0].closed
 
 
 def test_run_translate_zips_translates_chinese_ratio_records_with_backend_pool(tmp_path):
@@ -362,24 +390,41 @@ def test_run_translate_zips_updates_parquet_progress(tmp_path):
         def __init__(self):
             self.instances = []
 
-        def __call__(self, iterable, total, desc, unit):
-            progress = FakeProgress(iterable, total, desc, unit)
+        def __call__(self, iterable, total, desc, unit, **kwargs):
+            progress = FakeProgress(iterable, total, desc, unit, **kwargs)
             self.instances.append(progress)
             return progress
 
+        def of_unit(self, unit):
+            return [item for item in self.instances if item.unit == unit]
+
     class FakeProgress:
-        def __init__(self, iterable, total, desc, unit):
+        def __init__(self, iterable, total, desc, unit, leave=None, position=None):
             self.iterable = iterable
             self.total = total
             self.desc = desc
             self.unit = unit
+            self.leave = leave
+            self.position = position
             self.postfixes = []
+            self.descriptions = []
+            self.n = 0
+            self.closed = False
 
         def __iter__(self):
             yield from self.iterable
 
         def set_postfix(self, **kwargs):
-            self.postfixes.append(kwargs)
+            self.postfixes.append((self.n, kwargs))
+
+        def set_description(self, text):
+            self.descriptions.append(text)
+
+        def update(self, step):
+            self.n += step
+
+        def close(self):
+            self.closed = True
 
     registry = make_zip_dataset(tmp_path)
     config_path = tmp_path / "translate.json"
@@ -405,9 +450,13 @@ def test_run_translate_zips_updates_parquet_progress(tmp_path):
         progress_factory=progress_factory,
     )
 
-    assert progress_factory.instances
-    assert progress_factory.instances[0].unit == "row"
-    assert progress_factory.instances[0].postfixes[-1]["chinese"] == 2
+    rows = progress_factory.of_unit("row")
+    overall = progress_factory.of_unit("dataset")
+    assert rows and rows[0].postfixes[-1][1]["chinese"] == 2
+    assert len(overall) == 1
+    # Translation lands asynchronously, so the overall bar has to be refreshed
+    # from the result loop, not only while scanning.
+    assert overall[0].postfixes[-1][1]["written"] == 2
 
 
 def test_run_translate_zips_emit_raw_false_does_not_create_raw_jsonl(tmp_path):

@@ -1,14 +1,22 @@
 {
-  "request_timeout": 120,
+  "request_timeout": 180,
   "max_retries": 2,
   "disable_backend_after_failures": 20,
   "backends": [
     {
-      "name": "gpu0",
-      "api_base": "http://10.0.0.1:18180/v1/chat/completions",
-      "model": "Qwen3-VL",
-      "api_key": "sk-local",
-      "concurrency": 16,
+      "name": "qwen38-27b",
+      "api_base": "http://jb-aionlineinferenceservice-161248564342717824-8000-nhss-job.z2120.nhss.zhejianglab.com:31080/v1/chat/completions",
+      "model": "Qwen3.8-27B",
+      "api_key": "在这里填你的 key",
+      "concurrency": 8,
+      "weight": 1
+    },
+    {
+      "name": "qwen35-122b-a10b",
+      "api_base": "http://jb-aionlineinferenceservice-161249674027102080-8000-nhss-job.z2120.nhss.zhejianglab.com:31080/v1/chat/completions",
+      "model": "Qwen3.5-122B-A10B",
+      "api_key": "在这里填你的 key",
+      "concurrency": 8,
       "weight": 1
     }
   ]

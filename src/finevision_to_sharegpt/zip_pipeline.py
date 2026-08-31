@@ -93,6 +93,7 @@ def run_translate_zips(
     models_by_backend: dict[str, str] = meta.get("models_by_backend") or {}
     prompt_version: str = meta.get("prompt_version") or ""
     versions: dict[str, DatasetVersion] = {}
+    progress_state: dict[str, Any] = {}
     raw_done = _prepare_raw_outputs(config, datasets) if config.emit_raw else {}
     totals: dict[str, Any] = {
         "processed": 0,
@@ -127,6 +128,7 @@ def run_translate_zips(
                     "skipped": 0,
                 },
                 limit_reached=lambda stats, limit: stats["written"] + stats["chinese"] >= limit,
+                progress_state=progress_state,
             ):
                 if config.emit_raw and item.sample_id not in raw_done[item.dataset.name]:
                     append_jsonl(
@@ -198,6 +200,7 @@ def run_translate_zips(
             totals["written"] += 1
             if dataset_stats is not None:
                 dataset_stats["written"] += 1
+            _update_overall_progress(progress_state.get("overall"), totals)
 
     _finalize_zip_run(config, datasets, totals, prune_failures=True)
     return totals
@@ -253,8 +256,13 @@ def _iter_dataset_rows(
     stats_factory: Any,
     limit_reached: Any,
     claim_status: str = "claimed",
+    progress_state: dict[str, Any] | None = None,
 ) -> Any:
+    overall = _overall_progress(datasets, progress_factory, description_prefix)
+    if progress_state is not None:
+        progress_state["overall"] = overall
     for dataset, request in datasets:
+        _describe_overall(overall, dataset.name, len(datasets))
         dataset_stats = stats_factory()
         limit = request.limit if request.limit is not None else config.limit_per_dataset
         version = ledger.open_dataset(dataset.name, dataset.source_path, config.images_root)
@@ -322,6 +330,63 @@ def _iter_dataset_rows(
             if limit is not None and limit_reached(dataset_stats, limit):
                 break
         totals["datasets"][dataset.name] = dataset_stats
+        _advance_overall(overall, totals)
+    _close_overall(overall)
+
+
+def _overall_progress(
+    datasets: list[tuple[RegisteredDataset, DatasetRequest]],
+    progress_factory: Any | None,
+    description_prefix: str,
+) -> Any:
+    """Outer bar over datasets, advanced by hand rather than by iteration.
+
+    A FineVision tree is hundreds of datasets of dozens of shards each; a bar
+    per shard alone scrolls for thousands of lines and never shows how far
+    along the whole run is.
+
+    Driving it manually matters: tqdm's own iterator defers ``self.n`` behind
+    ``miniters``, so a redraw triggered by ``set_postfix`` in between renders
+    a stale count. Passing no iterable and calling ``update`` per finished
+    dataset keeps the number honest at every redraw.
+    """
+
+    if progress_factory is None:
+        return None
+    return progress_factory(
+        None,
+        total=len(datasets),
+        desc=f"{description_prefix} datasets",
+        unit="dataset",
+        leave=True,
+        position=0,
+    )
+
+
+def _describe_overall(progress: Any, dataset_name: str, count: int) -> None:
+    if hasattr(progress, "set_description"):
+        progress.set_description(f"[{dataset_name}] of {count} datasets")
+
+
+def _update_overall_progress(progress: Any, totals: dict[str, Any]) -> None:
+    if hasattr(progress, "set_postfix"):
+        progress.set_postfix(
+            written=totals.get("written", 0),
+            failed=totals.get("failed", 0),
+            rejected=totals.get("rejected", 0),
+            skipped=totals.get("skipped", 0),
+        )
+
+
+def _advance_overall(progress: Any, totals: dict[str, Any]) -> None:
+    _update_overall_progress(progress, totals)
+    if hasattr(progress, "update"):
+        progress.update(1)
+
+
+def _close_overall(progress: Any) -> None:
+    if hasattr(progress, "close"):
+        progress.close()
 
 
 def _finalize_zip_run(
@@ -446,7 +511,8 @@ def _progress_rows(
         total = max(0, parquet_num_rows(parquet_path) - start_row)
     except Exception:
         total = None
-    return progress_factory(rows, total=total, desc=description, unit="row")
+    # leave=False so hundreds of shard bars collapse instead of scrolling.
+    return progress_factory(rows, total=total, desc=description, unit="row", leave=False, position=1)
 
 
 def _update_zip_progress(progress: Any, stats: dict[str, int]) -> None:
