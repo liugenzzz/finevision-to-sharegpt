@@ -3,6 +3,10 @@ from __future__ import annotations
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from .dataset_registry import RegisteredDataset
 
 
 @dataclass(frozen=True)
@@ -43,3 +47,34 @@ def extract_parquets_from_zip(zip_path: Path | str, extract_root: Path | str) ->
             extracted.append(ExtractedParquet(name=member.filename, path=output_path))
 
     return extracted
+
+
+def list_parquets_in_dir(dir_path: Path | str) -> list[ExtractedParquet]:
+    """List parquet files under a dataset directory without copying anything.
+
+    Names are directory-relative posix paths, matching the member names a zip
+    would yield, so sample ids look the same either way.
+    """
+
+    dir_path = Path(dir_path)
+    found = [
+        ExtractedParquet(name=path.relative_to(dir_path).as_posix(), path=path)
+        for path in sorted(dir_path.rglob("*.parquet"))
+        if path.is_file()
+    ]
+    return found
+
+
+def iter_dataset_parquets(
+    dataset: "RegisteredDataset",
+    extract_root: Path | str,
+) -> list[ExtractedParquet]:
+    """Resolve one dataset to its parquet files.
+
+    A directory is read in place, so it needs no temp space and no upfront
+    decompression; an archive is expanded under ``extract_root`` as before.
+    """
+
+    if dataset.is_directory:
+        return list_parquets_in_dir(dataset.source_path)
+    return extract_parquets_from_zip(dataset.source_path, extract_root)

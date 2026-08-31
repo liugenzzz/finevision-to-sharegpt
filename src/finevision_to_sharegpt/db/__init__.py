@@ -6,7 +6,7 @@ working on installs without it.
 """
 
 from .config import MysqlConfig, load_mysql_config
-from .fingerprint import ZipFingerprint, zip_fingerprint
+from .fingerprint import ZipFingerprint, directory_fingerprint, source_fingerprint, zip_fingerprint
 from .ledger import ConsumptionLedger, DatasetVersion, JsonlLedger, ScanPlan, open_ledger
 
 __all__ = [
@@ -16,7 +16,9 @@ __all__ = [
     "MysqlConfig",
     "ScanPlan",
     "ZipFingerprint",
+    "directory_fingerprint",
     "load_mysql_config",
+    "source_fingerprint",
     "open_ledger",
     "zip_fingerprint",
 ]

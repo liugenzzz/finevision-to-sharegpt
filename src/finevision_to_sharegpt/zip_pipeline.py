@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .archive import extract_parquets_from_zip
+from .archive import iter_dataset_parquets
 from .config_loader import DatasetRequest, ZipTaskConfig
 from .dataset_registry import RegisteredDataset, load_dataset_registry, resolve_dataset_selection
 from .db import ConsumptionLedger, DatasetVersion, open_ledger
@@ -145,7 +145,7 @@ def run_translate_zips(
                         image_paths=item.image_paths,
                         metadata={
                             "dataset": item.dataset.name,
-                            "source": str(item.dataset.zip_path),
+                            "source": str(item.dataset.source_path),
                             "parquet": item.parquet_name,
                         },
                     )
@@ -257,9 +257,9 @@ def _iter_dataset_rows(
     for dataset, request in datasets:
         dataset_stats = stats_factory()
         limit = request.limit if request.limit is not None else config.limit_per_dataset
-        version = ledger.open_dataset(dataset.name, dataset.zip_path, config.images_root)
+        version = ledger.open_dataset(dataset.name, dataset.source_path, config.images_root)
         versions[dataset.name] = version
-        for parquet in extract_parquets_from_zip(dataset.zip_path, tmp_root):
+        for parquet in iter_dataset_parquets(dataset, tmp_root):
             plan = ledger.scan_plan(version, parquet.name)
             progress = _progress_rows(
                 iter_parquet_rows_from(parquet.path, start_row=plan.start_row),
@@ -273,7 +273,7 @@ def _iter_dataset_rows(
                 if limit is not None and limit_reached(dataset_stats, limit):
                     exhausted = False
                     break
-                sample_id = f"{dataset.zip_path.stem}:{parquet.name}:{row_index}"
+                sample_id = f"{dataset.source_id}:{parquet.name}:{row_index}"
                 if ledger.is_consumed(version, sample_id, row_index, plan):
                     totals["skipped"] += 1
                     dataset_stats["skipped"] += 1
@@ -474,7 +474,7 @@ def _write_reject(
     append_jsonl(
         rejected_path,
         {
-            "source": str(dataset.zip_path),
+            "source": str(dataset.source_path),
             "dataset": dataset.name,
             "parquet": parquet_name,
             "row_index": row_index,

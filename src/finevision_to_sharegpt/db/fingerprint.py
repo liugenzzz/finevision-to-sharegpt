@@ -44,3 +44,42 @@ def zip_fingerprint(path: Path | str, sample_bytes: int = SAMPLE_BYTES) -> ZipFi
         file_size=size,
         file_mtime=int(stat.st_mtime),
     )
+
+
+def directory_fingerprint(path: Path | str, pattern: str = "*.parquet") -> ZipFingerprint:
+    """Fingerprint a dataset directory from its parquet inventory.
+
+    Hashes the sorted ``(relative path, size)`` pairs rather than file
+    contents: a FineVision directory is tens of gigabytes, and re-reading it
+    on every run to detect a change nobody made would dominate startup.
+    Mtime is deliberately excluded because rsync and cp rewrite it, which
+    would orphan the consumption history on every copy.
+
+    The blind spot is a regenerated file with an identical name and byte
+    count; for parquet that is not a realistic collision.
+    """
+
+    path = Path(path)
+    digest = hashlib.sha256()
+    total = 0
+    newest = 0
+    for item in sorted(path.rglob(pattern)):
+        if not item.is_file():
+            continue
+        stat = item.stat()
+        digest.update(item.relative_to(path).as_posix().encode("utf-8"))
+        digest.update(b":")
+        digest.update(str(stat.st_size).encode("ascii"))
+        digest.update(b"\n")
+        total += stat.st_size
+        newest = max(newest, int(stat.st_mtime))
+    return ZipFingerprint(source_hash=digest.hexdigest(), file_size=total, file_mtime=newest)
+
+
+def source_fingerprint(path: Path | str) -> ZipFingerprint:
+    """Fingerprint a dataset source, archive or directory."""
+
+    path = Path(path)
+    if path.is_dir():
+        return directory_fingerprint(path)
+    return zip_fingerprint(path)

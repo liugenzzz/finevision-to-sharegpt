@@ -7,7 +7,7 @@ from typing import Any, Iterator
 
 from . import schema
 from .config import MysqlConfig
-from .fingerprint import zip_fingerprint
+from .fingerprint import source_fingerprint
 from .ledger import ConsumptionLedger, DatasetVersion, ScanPlan
 from .pool import BatchWriter, ConnectionPool, MySQLUnavailable
 
@@ -126,8 +126,8 @@ class MySQLLedger(ConsumptionLedger):
 
     # -- dataset versions -----------------------------------------------
 
-    def open_dataset(self, dataset: str, zip_path: Path, images_root: Path) -> DatasetVersion:
-        fingerprint = zip_fingerprint(zip_path)
+    def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion:
+        fingerprint = source_fingerprint(source_path)
 
         def resolve(cursor: Any) -> int:
             cursor.execute(
@@ -143,7 +143,7 @@ class MySQLLedger(ConsumptionLedger):
                 """,
                 (
                     dataset,
-                    str(zip_path),
+                    str(source_path),
                     fingerprint.source_hash,
                     fingerprint.file_size,
                     fingerprint.file_mtime,

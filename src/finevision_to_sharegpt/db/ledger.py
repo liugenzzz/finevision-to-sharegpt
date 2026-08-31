@@ -44,7 +44,7 @@ class ConsumptionLedger(ABC):
     """
 
     @abstractmethod
-    def open_dataset(self, dataset: str, zip_path: Path, images_root: Path) -> DatasetVersion: ...
+    def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion: ...
 
     @abstractmethod
     def scan_plan(self, version: DatasetVersion, parquet_name: str) -> ScanPlan: ...
@@ -121,7 +121,7 @@ class JsonlLedger(ConsumptionLedger):
     def __init__(self, completed_ids: set[str] | None = None) -> None:
         self.completed_ids: set[str] = completed_ids if completed_ids is not None else set()
 
-    def open_dataset(self, dataset: str, zip_path: Path, images_root: Path) -> DatasetVersion:
+    def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion:
         return DatasetVersion(dataset=dataset)
 
     def scan_plan(self, version: DatasetVersion, parquet_name: str) -> ScanPlan:

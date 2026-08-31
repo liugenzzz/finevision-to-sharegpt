@@ -20,6 +20,8 @@
 - 支持输出 JSONL 和 JSON 数组。
 - 支持已有 JSON 翻译断点续跑。
 - 支持 zip/parquet 流式读取，避免全量加载数据集。
+- 数据集支持两种形式：zip 压缩包，或 FineVision 风格的 parquet 目录（就地读取，不占临时空间）。
+- 目录形式支持自动发现，几百个数据集不用逐个登记。
 - 支持多线程、多卡、多模型、多 backend 固定并发翻译。
 - 支持运行时进度条，显示 processed/written/failed/skipped 等统计。
 - 支持 backend 请求超时、重试、连续失败后临时禁用。
@@ -238,24 +240,41 @@ configs/datasets.json
 configs/translate_zips.json
 ```
 
-数据集注册表（`data_root` 相对项目根）：
+数据集注册表（`data_root` 相对项目根）。两种形式，可混用：
 
 ```json
 {
   "data_root": "data/zips",
   "datasets": {
-    "okvqa": {
-      "zip": "okvqa.zip"
-    },
-    "chartqa": {
-      "zip": "chartqa.zip"
-    },
-    "captcha": {
-      "zip": "captcha/captcha.zip"
-    }
+    "okvqa": { "zip": "okvqa.zip" },
+    "chartqa": { "zip": "chartqa.zip" },
+    "CoSyn_400k_chart": { "dir": "CoSyn_400k_chart" }
   }
 }
 ```
+
+- `zip`：压缩包，运行时解压到临时目录。
+- `dir`：目录，里面是裸 parquet（可嵌套子目录）。**就地读取，不解压，不占临时空间。**
+
+FineVision 那种「一个数据集一个目录、几百个目录」的结构，用自动发现：
+
+```json
+{
+  "data_root": "/mnt/data/FineVision",
+  "auto_discover": true
+}
+```
+
+`data_root` 下每个含有 parquet 的子目录都会被注册成数据集，目录名即数据集名；`README.md` 这类散文件自动忽略。也可以筛选：
+
+```json
+{
+  "data_root": "/mnt/data/FineVision",
+  "auto_discover": { "include": ["arxivqa", "chartqa"] }
+}
+```
+
+`include` 和 `exclude` 都按目录名精确匹配。显式写在 `datasets` 里的条目会覆盖同名的自动发现结果。
 
 任务配置：
 
@@ -520,6 +539,7 @@ pytest -q
 - translate-json 配置模式和旧参数模式。
 - zip 导出和 zip 按比例翻译。
 - parquet 按 row group 跳读与断点续扫。
+- 目录形式数据集的注册、自动发现、就地读取与目录指纹。
 - MySQL 配置解析、zip 指纹、批量写入与降级回文件模式。
 - 流水线对账本的调用（认领、完成、失败、译文归属）。
 - 连真实数据库的端到端用例（未配置 `FV_TEST_MYSQL` 时自动跳过）。
