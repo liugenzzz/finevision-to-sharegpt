@@ -12,6 +12,7 @@
 另有一组可选的 MySQL 命令（`db-init` / `db-scan` / `db-export` / `db-status`），用于跨任务增量抽取，见下方“可选：接入 MySQL”。
 
 详细运行说明见 [docs/运行说明.md](docs/运行说明.md)。
+受限服务器（根目录不可写、只有 conda）的从零部署见 [docs/服务器部署说明.md](docs/服务器部署说明.md)。
 
 ## 主要特性
 
