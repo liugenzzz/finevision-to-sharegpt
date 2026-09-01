@@ -138,3 +138,42 @@ def test_parse_row_still_reports_missing_text_for_an_empty_caption_list():
 
     assert not parsed.accepted
     assert parsed.reason == "missing_text"
+
+
+def test_parse_row_pairs_a_question_column_with_an_answer_column():
+    # RefCOCO-style: the exchange lives in two columns, not a conversation list.
+    row = {
+        "question_id": 7,
+        "image": b"png bytes",
+        "question": "Which cat is on the left?",
+        "answer": "The tabby one.",
+        "bbox": [1, 2, 3, 4],
+    }
+
+    parsed = parse_row(row, source_id="refcoco:0")
+
+    assert parsed.accepted
+    assert [(turn.role, turn.text) for turn in parsed.sample.turns] == [
+        ("human", "Which cat is on the left?"),
+        ("gpt", "The tabby one."),
+    ]
+
+
+def test_parse_row_ignores_half_an_exchange():
+    parsed = parse_row({"image": b"png", "question": "Where?"}, source_id="half:0")
+
+    assert not parsed.accepted
+    assert parsed.reason == "missing_text"
+
+
+def test_a_conversation_column_still_wins_over_loose_question_columns():
+    row = {
+        "image": b"png",
+        "texts": [{"user": "from texts", "assistant": "answer"}],
+        "question": "from question",
+        "answer": "other",
+    }
+
+    parsed = parse_row(row, source_id="both:0")
+
+    assert parsed.sample.turns[0].text == "from texts"

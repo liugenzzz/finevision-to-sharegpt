@@ -130,3 +130,14 @@ def test_all_probes_every_subdirectory_and_survives_a_broken_one(tmp_path, capsy
 def test_a_missing_path_is_an_error(tmp_path, capsys):
     assert probe_dataset.main([str(tmp_path / "nope")]) == 1
     assert "not a directory" in capsys.readouterr().err
+
+
+def test_a_failed_probe_does_not_claim_the_rows_had_no_images(tmp_path, capsys):
+    # missing_text means the images WERE found; printing "0 张图" contradicts it.
+    write_parquet(tmp_path / "part-000.parquet", pa.table({"image": [b"png bytes"]}))
+
+    probe_dataset.report("flickr30k", probe_dataset.probe_dataset(tmp_path))
+
+    output = capsys.readouterr().out
+    assert "一条都没解析出来" in output
+    assert "0 张图" not in output

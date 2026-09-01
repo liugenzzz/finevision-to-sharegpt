@@ -18,6 +18,9 @@ ROLE_MAP = {
 
 TEXT_FIELDS = ("texts", "messages", "conversations")
 CAPTION_FIELDS = ("caption", "description", "text")
+# Columns that pair one question with one answer, in preference order. Only a
+# complete pair counts: half of an exchange is not a sample.
+QA_FIELDS = (("question", "answer"), ("prompt", "response"))
 
 
 def parse_row(
@@ -30,6 +33,8 @@ def parse_row(
         return ParseResult(False, reason="missing_image", metadata={"image_count": 0})
 
     turns = _extract_turns(row)
+    if not turns:
+        turns = _extract_qa(row)
     if not turns:
         caption = _extract_caption(row)
         if caption:
@@ -80,6 +85,23 @@ def _extract_turns(row: Mapping[str, Any]) -> list[SourceTurn]:
             for item in value:
                 turns.extend(_message_to_turns(item))
             return turns
+    return []
+
+
+def _extract_qa(row: Mapping[str, Any]) -> list[SourceTurn]:
+    """A question column paired with an answer column, as one exchange.
+
+    Plenty of sets keep the two sides in their own columns rather than in a
+    conversation list — RefCOCO ships ``question`` and ``answer`` beside the
+    image. Without this they parse as missing text and the whole dataset is
+    rejected, even though the exchange is right there.
+    """
+
+    for question_field, answer_field in QA_FIELDS:
+        question = _field_text(row.get(question_field))
+        answer = _field_text(row.get(answer_field))
+        if question and answer:
+            return [SourceTurn("human", question), SourceTurn("gpt", answer)]
     return []
 
 

@@ -157,8 +157,12 @@ def report(name: str, probe: Probe) -> None:
         shown = ", ".join(probe.columns[:8])
         extra = f", …(+{len(probe.columns) - 8})" if len(probe.columns) > 8 else ""
         print(f"      列: {shown}{extra}")
-    if probe.rows_seen:
+    if probe.rows_ok:
         print(f"      前 {probe.rows_seen} 行解析出 {probe.rows_ok} 条，每条 {probe.images} 张图")
+    elif probe.rows_seen:
+        # "每条 0 张图" on a missing_text verdict reads as "no images either",
+        # which is the opposite of what that verdict means.
+        print(f"      前 {probe.rows_seen} 行一条都没解析出来")
     if probe.sample_text:
         print(f"      示例: {probe.sample_text}")
     print(f"      → {probe.advice}")
