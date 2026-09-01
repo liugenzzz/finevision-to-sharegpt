@@ -1,14 +1,16 @@
 {
-  "_comment": "冒烟配置：跑通链路用，不是生产配置。每个数据集只取 2 条，覆盖尽量多的 schema 变体；不接 MySQL，resume 关掉，重跑就是真重跑。",
+  "_comment": "冒烟配置：跑通链路用，不是生产配置。三个数据集各 100 条，形态刻意选得不一样——chartqa 图表问答、textvqa 图上文字、sharegpt4o 长描述——一次把短问答、OCR 和长文本三种 JSON 解析都过一遍。不接 MySQL，resume 关掉，重跑就是真重跑。不要用 [\"*\"]：那会把 191 个数据集挨个爬，遇到整集被拒的会为了凑够配额把整个数据集从头扫到尾。",
   "dataset_registry": "configs/datasets.json",
   "datasets": [
-    "*"
+    "chartqa",
+    "textvqa",
+    "sharegpt4o"
   ],
   "output_jsonl": "output/smoke.jsonl",
   "images_root": "output/smoke_images",
   "chinese_ratio": 1.0,
   "seed": 42,
-  "limit_per_dataset": 2,
+  "limit_per_dataset": 100,
   "backend_config": "configs/backend_config.json",
   "sample_prompt_file": "prompts/translate_sample_zh.txt",
   "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
