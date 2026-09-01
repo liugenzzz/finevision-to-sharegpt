@@ -56,11 +56,19 @@ SELECT dataset, COUNT(*), MAX(images_root), MAX(first_seen_at)
 FROM dataset_version GROUP BY dataset
 """
 
+# BASE TABLE only: db-init makes one view per dataset, and a couple of hundred
+# empty view rows bury the four tables that actually hold anything.
 STORAGE_QUERY = """
 SELECT table_name, table_rows, data_length, index_length
 FROM information_schema.tables
-WHERE table_schema = %s
+WHERE table_schema = %s AND table_type = 'BASE TABLE'
 ORDER BY data_length + index_length DESC
+"""
+
+REJECT_QUERY = """
+SELECT reject_reason, COUNT(*)
+FROM sample_source WHERE status = 'rejected'
+GROUP BY reject_reason ORDER BY COUNT(*) DESC
 """
 
 Query = Callable[..., list[tuple[Any, ...]]]
@@ -112,6 +120,7 @@ def survey(query: Query, dataset: str | None = None) -> dict[str, Any]:
     report["translations"] = query(TRANSLATION_QUERY)
     report["translated_by_dataset"] = dict(query(TRANSLATED_BY_DATASET))
     report["versions"] = query(VERSION_QUERY)
+    report["rejects"] = query(REJECT_QUERY) if report["sources"]["by_status"].get("rejected") else []
     return report
 
 
@@ -140,6 +149,13 @@ def print_report(report: dict[str, Any], storage: list[tuple[Any, ...]], top: in
         for batch, count in sorted(sources["by_batch"].items(), key=lambda item: -item[1])[:10]:
             print(f"  {batch:<24}{count:>12,}")
 
+    rejects = report.get("rejects") or []
+    if rejects:
+        rejected = sources["by_status"].get("rejected", 0)
+        print(f"\n被拒的 {rejected:,} 行，原因:")
+        for reason, count in rejects:
+            print(f"  {reason or '(未记录)':<20}{int(count):>12,}")
+
     translations = report["translations"]
     translated = report["translated_by_dataset"]
     print(f"\n译文 {sum(int(row[2]) for row in translations):,} 条，覆盖 {sum(translated.values()):,} 个样本")
@@ -163,12 +179,15 @@ def print_report(report: dict[str, Any], storage: list[tuple[Any, ...]], top: in
         print(f"  ... 还有 {len(order) - top} 个，加 --all 全看")
 
     if storage:
-        print(f"\n{'表':<24}{'估算行数':>14}{'数据':>10}{'索引':>10}")
+        # table_rows comes from InnoDB's sampled statistics and drifts badly on a
+        # freshly loaded table; the counts above are the real numbers.
+        print(f"\n{'表':<24}{'估算行数*':>14}{'数据':>10}{'索引':>10}")
         for table, rows_total, data_length, index_length in storage:
             print(
                 f"  {table:<22}{int(rows_total or 0):>14,}"
                 f"{int(data_length or 0) / MB:>9.0f}M{int(index_length or 0) / MB:>9.0f}M"
             )
+        print("  * information_schema 的抽样估算，刚灌完的表会偏得很离谱；准确数看上面的分组统计")
 
 
 def main(argv: list[str] | None = None) -> int:

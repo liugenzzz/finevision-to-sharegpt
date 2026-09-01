@@ -119,3 +119,49 @@ def test_an_empty_ledger_says_so_instead_of_printing_an_empty_table(capsys):
     )
 
     assert "一行都没有" in capsys.readouterr().out
+
+
+def test_reject_reasons_are_only_queried_when_something_was_rejected():
+    asked = []
+
+    def query(sql, params=()):
+        asked.append(sql)
+        if "FROM sample_source\n" in sql:
+            return [("okvqa", "done", "zh", None, 10, 10, 10)]
+        return []
+
+    db_inventory.survey(query)
+
+    assert not any("status = 'rejected'" in sql for sql in asked)
+
+
+def test_reject_reasons_are_reported_when_rows_were_rejected(capsys):
+    rows = [("text_openorca", "rejected", None, None, 900, 0, 0)]
+    db_inventory.print_report(
+        {
+            "sources": db_inventory.summarize(rows),
+            "translations": [],
+            "translated_by_dataset": {},
+            "rejects": [("missing_image", 900)],
+        },
+        storage=[],
+        top=10,
+    )
+
+    output = capsys.readouterr().out
+    assert "被拒的 900 行" in output
+    assert "missing_image" in output
+
+
+def test_estimated_row_counts_are_marked_as_unreliable(capsys):
+    db_inventory.print_report(
+        {
+            "sources": db_inventory.summarize([("okvqa", "done", "zh", None, 10, 10, 10)]),
+            "translations": [],
+            "translated_by_dataset": {},
+        },
+        storage=[("sample_source", 115012, 33 * 1024**2, 30 * 1024**2)],
+        top=10,
+    )
+
+    assert "抽样估算" in capsys.readouterr().out
