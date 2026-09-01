@@ -835,6 +835,7 @@
     "flush_interval_seconds": 5,
     "claim_ttl_seconds": 3600,
     "on_connect_error": "fail",
-    "store_conversations": false
+    "store_conversations": true,
+    "_store_conversations_note": "存英文原文。关掉的话账本只有 id/图片路径/状态，省几 GB，但英文那部分样本 db-export 导不出来（源文本不在库里），库就当不成动态配比的唯一数据源。这个开关不能事后补：关着跑完的行不会回填。"
   }
 }
