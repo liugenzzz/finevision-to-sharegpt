@@ -1,5 +1,5 @@
 {
-  "_comment": "本机 4 个 vLLM 实例，TP=2 各占两张卡。model 是实例的 --served-model-name（问一句就知道: curl -H 'Authorization: Bearer local-pool-key' http://127.0.0.1:8001/v1/models），api_key 等于启动脚本的 --api-key，concurrency 对齐 --max-num-seqs 64——客户端线程超过它只会在服务端排队。实例的 max_model_len 是 8192，长文档多图样本可能撞上限，表现为 failed.jsonl 里堆 content 为空。",
+  "_comment": "翻译后端池。model 是实例的 --served-model-name（问一句就知道: curl -H 'Authorization: Bearer <key>' <api_base 去掉 /chat/completions>/models）。api_base 必须是完整的 /v1/chat/completions，只写到 /v1 会 404。调度只看 concurrency：每个后端起这么多线程，从同一个队列里抢任务，快的后端自然抢得多，不需要手动配权重（weight 字段留着兼容，实际不参与调度）。某个后端连续失败 disable_backend_after_failures 次会被摘掉，剩下的继续跑。",
   "request_timeout": 300,
   "max_retries": 2,
   "disable_backend_after_failures": 20,
@@ -53,6 +53,20 @@
       "model": "Qwen3.8-27B",
       "api_key": "local-pool-key",
       "concurrency": 64,
+      "weight": 1,
+      "extra_body": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
+    },
+    {
+      "name": "remote-zjlab",
+      "_note": "浙江实验室的远端实例，容量未知且可能与他人共享，先给 16 路试；跑起来看它是不是拖后腿，是就调小或删掉。api_key 需要自己填。",
+      "api_base": "http://jb-aionlineinferenceservice-161248564342717824-8000-nhss-job.z2120.nhss.zhejianglab.com:31080/v1/chat/completions",
+      "model": "Qwen3.8-27B",
+      "api_key": "在这里填远端的 key",
+      "concurrency": 16,
       "weight": 1,
       "extra_body": {
         "chat_template_kwargs": {
