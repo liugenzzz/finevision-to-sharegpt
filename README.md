@@ -341,6 +341,18 @@ python -m finevision_to_sharegpt list-datasets --config configs/translate_zips.j
 
 会列出每个数据集的名字、形式、parquet 分片数和体积。**如果 `total` 只有 1 而你预期几百个，说明 `data_root` 指高了一层** —— 父目录被当成了一个巨型数据集。
 
+### 先跑通链路再谈量
+
+百万条的规划建立在「管道跑得通、译文能看」之上，而这两件事只有真后端能回答。`configs/translate_smoke.json` 就是干这个的：每个数据集取 2 条，覆盖尽量多的 schema 变体，不接 MySQL，`resume` 关掉（重跑就是真重跑）。
+
+```bash
+python scripts/check_backends.py configs/backend_config.json      # 先探活，别拿几小时试错
+python -m finevision_to_sharegpt translate-zips --config configs/translate_smoke.json
+head -3 output/smoke.jsonl
+```
+
+`check_backends.py` 查三件事：`api_base` 是不是完整的 `/v1/chat/completions`、key 认不认、模型收不收图片——翻译永远带图发，纯文本模型会条条失败。冒烟跑完看 `output/rejected.jsonl`（哪些行解析不了）和 `emit_raw` 留下的原文，确认 `<think>` 剥离和 JSON 解析在真实模型上没问题，再定总量和并发。
+
 任务配置：
 
 ```json

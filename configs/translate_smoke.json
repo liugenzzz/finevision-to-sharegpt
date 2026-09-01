@@ -1,0 +1,17 @@
+{
+  "_comment": "冒烟配置：跑通链路用，不是生产配置。每个数据集只取 2 条，覆盖尽量多的 schema 变体；不接 MySQL，resume 关掉，重跑就是真重跑。",
+  "dataset_registry": "configs/datasets.json",
+  "datasets": [
+    "*"
+  ],
+  "output_jsonl": "output/smoke.jsonl",
+  "images_root": "output/smoke_images",
+  "chinese_ratio": 1.0,
+  "seed": 42,
+  "limit_per_dataset": 2,
+  "backend_config": "configs/backend_config.json",
+  "sample_prompt_file": "prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
+  "emit_raw": true,
+  "resume": false
+}
