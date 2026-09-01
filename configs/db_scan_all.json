@@ -1,0 +1,24 @@
+{
+  "_comment": "全量补扫：所有数据集、不设上限，只灌元数据和英文原文，不调模型。配合 --no-images 连图片文件都不写（路径是内容哈希，从内存里的字节算出来的，永远正确，真正用到时自然会写）。跑之前要先清水位线才会从头重读：DELETE FROM dataset_cursor;  否则 db-scan 按断点续传，一行都不会读。跟翻译并行是安全的：sample_source 的 upsert 对 done 行不降级。",
+  "dataset_registry": "configs/datasets.json",
+  "datasets": [
+    "*"
+  ],
+  "output_jsonl": "output/scan_all/train.jsonl",
+  "images_root": "output/scan_all/images",
+  "seed": 42,
+  "resume": true,
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "batch_size": 200,
+    "flush_interval_seconds": 5,
+    "claim_ttl_seconds": 3600,
+    "on_connect_error": "fail",
+    "store_conversations": true,
+    "_store_conversations_note": "存英文原文。关掉的话账本只有 id/图片路径/状态，省几 GB，但英文那部分样本 db-export 导不出来（源文本不在库里），库就当不成动态配比的唯一数据源。这个开关不能事后补：关着跑完的行不会回填。"
+  }
+}
