@@ -546,6 +546,20 @@ bash scripts/in_translate_zips.sh   # 第二次：再抽 5000 条全新的
 
 两次的输出目录可以不同，也不会重复。
 
+### 看看库里到底有什么
+
+`db-status` 回答「这次跑到哪了」。开跑之前想知道的是另一个问题：**之前几次灌库到底进了什么**——原文存没存、哪些已经有译文、占了多少空间。
+
+```bash
+python scripts/db_inventory.py --config configs/translate_5m.json
+python scripts/db_inventory.py --config configs/translate_5m.json --all      # 列出全部数据集
+python scripts/db_inventory.py --config configs/translate_5m.json --dataset chartqa
+```
+
+只读，不建表不写入，指着正在跑的库也安全。输出按状态、语言、批次分组，逐数据集列出 done / pending / 中文 / 英文 / 有译文的条数，最后是各表的行数和体积。
+
+它会特别提示一件事：**有多少行存了英文原文**。`store_conversations` 关着灌进去的行，源文本不在库里，`db-export` 导不出来——这些行只能当账本，不能当数据源。前后两次灌库设置不一致的话也会点出来。
+
 ### 其他命令
 
 ```bash
