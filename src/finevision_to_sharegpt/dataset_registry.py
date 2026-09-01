@@ -55,24 +55,39 @@ def load_dataset_registry(path: Path | str) -> DatasetRegistry:
     data_root_value = data.get("data_root")
     if data_root_value is None:
         # No data_root given: fall back to the registry file's own directory.
-        data_root = path.parent
+        roots = [path.parent]
+    elif isinstance(data_root_value, list):
+        # Several roots: collections rarely live under one parent, and a
+        # sibling directory should not need its own registry file.
+        roots = [Path(str(item)) for item in data_root_value]
     else:
         # A relative data_root resolves against the current working directory
         # (the scripts cd into the project root), matching how every other
         # path in the config files is interpreted.
-        data_root = Path(str(data_root_value))
+        roots = [Path(str(data_root_value))]
+    data_root = roots[0]
 
     datasets: dict[str, RegisteredDataset] = {}
     auto_discover = data.get("auto_discover")
     if auto_discover:
-        datasets.update(discover_datasets(data_root, auto_discover))
+        for root in roots:
+            for name, dataset in discover_datasets(root, auto_discover).items():
+                if name in datasets:
+                    raise ValueError(
+                        f"dataset name {name!r} was discovered under more than one data_root "
+                        f"({datasets[name].source_path} and {dataset.source_path}); "
+                        "rename one directory or list them explicitly under datasets"
+                    )
+                datasets[name] = dataset
     # Explicit entries win over discovered ones with the same name.
     for name, item in sorted((data.get("datasets") or {}).items()):
         datasets[str(name)] = _parse_entry(str(name), item, data_root)
     if auto_discover and not datasets:
         # Returning an empty registry would let every command "succeed" while
         # writing nothing, which reads as a silent data loss.
-        raise ValueError(describe_empty_discovery(data_root, auto_discover))
+        raise ValueError(
+            "\n".join(describe_empty_discovery(root, auto_discover) for root in roots)
+        )
     return DatasetRegistry(data_root=data_root, datasets=datasets)
 
 

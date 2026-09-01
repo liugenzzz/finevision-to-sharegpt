@@ -367,3 +367,52 @@ def test_image_store_can_plan_a_path_without_writing(tmp_path):
     # The path a metadata-only scan recorded is the one the real write uses.
     assert written == planned
     assert (tmp_path / written).read_bytes() == data
+
+
+# -- several data roots ------------------------------------------------------
+
+
+def test_auto_discover_spans_several_data_roots(tmp_path):
+    """Collections rarely share one parent directory."""
+
+    first = tmp_path / "mm_general" / "FineVision"
+    second = tmp_path / "mm_general" / "OmniScience"
+    make_dataset_dir(first, "arxivqa")
+    make_dataset_dir(second, "physics_qa")
+    registry_path = tmp_path / "datasets.json"
+    registry_path.write_text(
+        json.dumps({"data_root": [str(first), str(second)], "auto_discover": True}),
+        encoding="utf-8",
+    )
+
+    registry = load_dataset_registry(registry_path)
+
+    assert sorted(registry.datasets) == ["arxivqa", "physics_qa"]
+    assert registry.datasets["physics_qa"].source_path == second / "physics_qa"
+
+
+def test_a_name_found_under_two_roots_is_an_error(tmp_path):
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    make_dataset_dir(first, "chartqa")
+    make_dataset_dir(second, "chartqa")
+    registry_path = tmp_path / "datasets.json"
+    registry_path.write_text(
+        json.dumps({"data_root": [str(first), str(second)], "auto_discover": True}),
+        encoding="utf-8",
+    )
+
+    # Silently keeping one would mean half the data vanishes without a word.
+    with pytest.raises(ValueError, match="more than one data_root"):
+        load_dataset_registry(registry_path)
+
+
+def test_a_single_data_root_string_still_works(tmp_path):
+    root = tmp_path / "FineVision"
+    make_dataset_dir(root, "arxivqa")
+    registry_path = tmp_path / "datasets.json"
+    registry_path.write_text(
+        json.dumps({"data_root": str(root), "auto_discover": True}), encoding="utf-8"
+    )
+
+    assert sorted(load_dataset_registry(registry_path).datasets) == ["arxivqa"]
