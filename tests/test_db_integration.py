@@ -398,3 +398,41 @@ def test_lean_ledger_still_exports_translated_samples(tmp_path, clean_database, 
 
     assert export["written"] == 3
     assert all(record["conversations"][1]["value"] == "答" for record in records)
+
+
+def test_a_backfill_scan_does_not_undo_finished_translations(tmp_path, clean_database, mysql_settings):
+    """The case that makes scanning and translating safe to run at the same time.
+
+    ``db-scan`` writes every row it reads as ``pending``. Re-scanning to fill in
+    source text a first pass skipped must not walk back over rows the translator
+    has already finished, or a multi-day run quietly loses its results.
+    """
+
+    registry = make_zip_dataset(tmp_path, rows=4)
+    config, config_path = write_config(tmp_path, registry, mysql_settings, chinese_ratio=1.0)
+    scan_config, scan_path = write_config(tmp_path, registry, mysql_settings, name="scan.json")
+
+    run_translate_zips(config, _SuccessfulPool(), _handler)
+    assert run_db_status(config_path)["totals"] == {"done": 4}
+
+    # A backfill re-reads from row 0: the cursor is what a re-scan would clear.
+    _execute(mysql_settings, "DELETE FROM dataset_cursor")
+    run_scan_zips(scan_config, write_images=False)
+
+    assert run_db_status(scan_path)["totals"] == {"done": 4}
+    assert _query_one(mysql_settings, "SELECT COUNT(*) FROM sample_translation") == 4
+    # The point of the backfill still happens: source text lands on done rows.
+    assert _query_one(
+        mysql_settings, "SELECT COUNT(*) FROM sample_source WHERE conversations IS NOT NULL"
+    ) == 4
+    assert run_db_export(config_path, tmp_path / "exported.jsonl")["written"] == 4
+
+
+def _execute(mysql_settings, sql):
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+
+    ledger = MySQLLedger(load_mysql_config(mysql_settings))
+    try:
+        ledger.pool.run(lambda cursor: cursor.execute(sql))
+    finally:
+        ledger.close()

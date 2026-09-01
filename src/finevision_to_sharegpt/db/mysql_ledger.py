@@ -34,7 +34,12 @@ ON DUPLICATE KEY UPDATE
   conversations    = VALUES(conversations),
   image_paths      = VALUES(image_paths),
   image_count      = VALUES(image_count),
-  status           = VALUES(status),
+  -- A finished row is never downgraded. db-scan writes every row it reads as
+  -- 'pending', so a backfill scan running beside a translation would otherwise
+  -- reset rows the translator had already completed, and the work would be
+  -- redone on the next pass. The consume path never re-claims a done row, so
+  -- holding the status here costs nothing and makes the two safe to overlap.
+  status           = IF(sample_source.status = 'done', 'done', VALUES(status)),
   reject_reason    = VALUES(reject_reason),
   batch_id         = VALUES(batch_id),
   claimed_at       = VALUES(claimed_at),

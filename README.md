@@ -561,6 +561,29 @@ bash scripts/in_translate_zips.sh   # 第二次：再抽 5000 条全新的
 
 两次的输出目录可以不同，也不会重复。
 
+### 一边翻译一边补扫
+
+`db-scan` 按 `dataset_cursor` 的水位线续传，所以想给已经扫过的行补上原文（第一遍 `store_conversations` 关着的情况），要先清水位线让它从头重读：
+
+```sql
+DELETE FROM dataset_cursor;
+```
+
+```bash
+# 补扫，--no-images 只记路径不写文件，翻译那边用到时自然会写
+python -m finevision_to_sharegpt db-scan --config configs/translate_full.json --no-images
+```
+
+**这两件事可以同时跑。** `sample_source` 的 upsert 对 `done` 行不降级——补扫把每一行都当 `pending` 写，但已经翻完的行会保持 `done`，不会被打回去重翻。两个进程抢的是磁盘带宽和数据库连接，不是同一行的状态。
+
+要留意的是连接数：翻译那边每个后端线程一条连接（4×64+16 = 272），补扫再加一批，MySQL 的 `max_connections` 默认 151，不够就先调大。
+
+真要重翻某批（换了模型或提示词），把状态改回去是显式操作，不会自己发生：
+
+```sql
+UPDATE sample_source SET status = 'pending' WHERE dataset = 'chartqa' AND status = 'done';
+```
+
 ### 看看库里到底有什么
 
 `db-status` 回答「这次跑到哪了」。开跑之前想知道的是另一个问题：**之前几次灌库到底进了什么**——原文存没存、哪些已经有译文、占了多少空间。
