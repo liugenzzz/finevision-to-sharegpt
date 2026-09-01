@@ -1,0 +1,16 @@
+{
+  "_comment": "生产侧压测：export-zips 走完全一样的读 parquet、解图、算哈希、写盘路径，只是不调模型。跑出来的 row/s 就是生产侧的天花板——翻译再快也超不过它。跟 translate_bench.json 用同一批数据集，好直接对比。",
+  "dataset_registry": "configs/datasets.json",
+  "datasets": [
+    "chartqa",
+    "sharegpt4o",
+    "olmOCR-mix-0225-documents",
+    "DoclingMatix",
+    "densefusion_1m"
+  ],
+  "output_jsonl": "output/export_bench/train.jsonl",
+  "images_root": "output/export_bench/images",
+  "seed": 42,
+  "limit_per_dataset": 1000,
+  "resume": false
+}
