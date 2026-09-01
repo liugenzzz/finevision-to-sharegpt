@@ -1,6 +1,6 @@
 {
-  "_comment": "800 万条通用多模态混合。169 个 FineVision 数据集全部归类，6 个按 _excluded 的理由排除。share 是类别占 total 的比例，max_share_per_dataset 是单个数据集在本类别配额里的上限——不设上限的话 densefusion_1m 一家 105 万会吃掉 caption 类一半。配额分配见 scripts/plan_sampling.py。",
-  "total": 8000000,
+  "_comment": "500 万条通用多模态混合。169 个 FineVision 数据集全部归类，6 个按 _excluded 的理由排除。share 是类别占 total 的比例，max_share_per_dataset 是单个数据集在本类别配额里的上限——不设上限的话 densefusion_1m 一家 105 万会吃掉 caption 类一半。相比 800 万那版，推理和图示的比例调高了：这两类池子只有 40 万和 35 万，800 万时被抽到 98%/100% 仍然只占 4.9%/4.4%，500 万时同样的池子撑得起 7%/5%。配额分配见 scripts/plan_sampling.py。",
+  "total": 5000000,
   "_excluded": {
     "captcha": "验证码识别，通用模型学不到东西（11.3 万）",
     "chinesememe": "已经是中文，不需要翻译；要用的话直接合并（5.4 万）",
@@ -11,7 +11,7 @@
   },
   "categories": {
     "caption_图文描述": {
-      "share": 0.221,
+      "share": 0.22,
       "max_share_per_dataset": 0.18,
       "match": [
         "densefusion_1m",
@@ -34,7 +34,7 @@
       ]
     },
     "vqa_通用问答": {
-      "share": 0.258,
+      "share": 0.25,
       "max_share_per_dataset": 0.22,
       "match": [
         "objects365_qa",
@@ -65,7 +65,7 @@
       ]
     },
     "reasoning_视觉推理": {
-      "share": 0.049,
+      "share": 0.07,
       "max_share_per_dataset": 0.25,
       "match": [
         "clevr",
@@ -85,7 +85,7 @@
       ]
     },
     "ocr_文档": {
-      "share": 0.18,
+      "share": 0.17,
       "max_share_per_dataset": 0.15,
       "match": [
         "DoclingMatix",
@@ -185,7 +185,7 @@
       ]
     },
     "diagram_科学图示": {
-      "share": 0.044,
+      "share": 0.05,
       "max_share_per_dataset": 0.3,
       "match": [
         "arxivqa",
@@ -207,7 +207,7 @@
       ]
     },
     "gui_界面代码": {
-      "share": 0.04,
+      "share": 0.035,
       "max_share_per_dataset": 0.3,
       "match": [
         "aguvis-stage-1",
@@ -219,7 +219,7 @@
       ]
     },
     "domain_专业领域": {
-      "share": 0.008,
+      "share": 0.005,
       "max_share_per_dataset": 0.6,
       "match": [
         "pathvqa",

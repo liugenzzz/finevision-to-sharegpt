@@ -349,13 +349,13 @@ python -m finevision_to_sharegpt list-datasets --config configs/translate_zips.j
 # 不接 MySQL，直接从行数清单规划
 python scripts/plan_sampling.py --counts configs/fv_counts.txt \
     --config configs/translate_zips.json \
-    --plan configs/sampling_plan_8m.json --chinese-ratio 0.7 \
-    -o configs/translate_8m.json
+    --plan configs/sampling_plan_5m.json --chinese-ratio 0.7 \
+    -o configs/translate_5m.json
 
 # 或者已经灌过库，行数从账本取
 python scripts/plan_sampling.py --config configs/db_scan.json --dump
 python scripts/plan_sampling.py --config configs/db_scan.json \
-    --plan configs/sampling_plan_8m.json -o configs/translate_8m.json
+    --plan configs/sampling_plan_5m.json -o configs/translate_5m.json
 ```
 
 `--counts` 读 `<行数> <数据集名>` 的文本（就是 `--dump` 的输出格式，带逗号和括号都行），所以**规划不必等 db-scan 跑完**——几百万行灌完库才发现某个类别配额够不着，是很贵的等待。
