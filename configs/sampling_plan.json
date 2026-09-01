@@ -1,0 +1,30 @@
+{
+  "_comment": "增量预训练通用部分。total 是这一批要抽的总条数；share 是各类别占比。patterns 是对数据集名的正则（不区分大小写），match 是精确名。先用 --dump 看真实数据集名再调。",
+  "total": 175000,
+  "categories": {
+    "caption_图文描述": {
+      "share": 0.375,
+      "patterns": ["caption", "^sharegpt4[ov]", "localized_narratives", "textcaps", "image_textualization", "coco_colors"]
+    },
+    "vqa_通用问答": {
+      "share": 0.20,
+      "patterns": ["^vqav2$", "^a_okvqa$", "^okvqa$", "^cocoqa$", "^visual7w$", "^vizwiz", "^oodvqa$", "^vqarad$", "^pathvqa$"]
+    },
+    "reasoning_视觉推理": {
+      "share": 0.175,
+      "patterns": ["^gqa$", "visual_genome", "^clevr", "super_clevr", "^raven$", "^vsr$", "spatialsense", "spot_the_diff", "^mmra$", "^iconqa"]
+    },
+    "ocr_文档": {
+      "share": 0.125,
+      "patterns": ["textvqa", "docvqa", "ocr", "^st_vqa$", "^est_vqa$", "^sroie$", "^funsd$", "^iiit5k$", "^imgur5k$", "synthdog", "rendered_text", "^textocr", "visualmrc", "^iam$", "^bentham$"]
+    },
+    "region_区域定位": {
+      "share": 0.10,
+      "patterns": ["region", "refcoco", "entities", "^lvis_instruct4v$", "^tallyqa$", "screen2words", "^screenqa$"]
+    },
+    "chart_图表示意图": {
+      "share": 0.025,
+      "patterns": ["chartqa", "^chart2text$", "^ai2d", "figureqa", "^dvqa$", "^plotqa$", "unichart", "^mapqa$", "^tabmwp$", "infographic"]
+    }
+  }
+}
