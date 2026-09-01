@@ -167,3 +167,6 @@
        300  diagram_image_to_text
        200  maptext
        194  funsd
+   1,880,992  the_cauldron
+      31,783  Flickr30k
+      17,596  RefCOCO

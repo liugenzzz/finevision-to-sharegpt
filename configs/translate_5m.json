@@ -1,285 +1,300 @@
 {
-  "_comment": "500 万条按类别配比，chinese_ratio=1.0 每条都翻。配上 store_conversations=true，库里每条同时有英文原文和中文译文，中英比例（2:1 也好 7:3 也好）变成查询时挑哪一列，不用重翻。4 个实例实测约 4.3 条/秒 → 约 13.4 天。",
+  "_comment": "500 万条按类别配比，chinese_ratio=1.0 每条都翻。配上 store_conversations=true，库里每条同时有英文原文和中文译文，中英比例变成查询时挑哪一列，不用重翻。4 个实例实测约 4.3 条/秒 → 约 13.4 天。注意：这份是按仓库里的 fv_counts.txt 生成的；机器上那份行数更新，开跑前用它重新生成一次。",
   "dataset_registry": "configs/datasets.json",
   "datasets": [
     {
+      "name": "Flickr30k",
+      "limit": 22761,
+      "chinese_ratio": 1.0
+    },
+    {
       "name": "allava_laion",
-      "limit": 144790,
+      "limit": 141794,
       "chinese_ratio": 1.0
     },
     {
       "name": "coco_colors",
-      "limit": 86499,
+      "limit": 84709,
       "chinese_ratio": 1.0
     },
     {
       "name": "densefusion_1m",
-      "limit": 144790,
+      "limit": 141794,
       "chinese_ratio": 1.0
     },
     {
       "name": "google_landmarks",
-      "limit": 144790,
+      "limit": 141794,
       "chinese_ratio": 1.0
     },
     {
       "name": "image_textualization(filtered)",
-      "limit": 72814,
+      "limit": 71307,
       "chinese_ratio": 1.0
     },
     {
       "name": "laion_gpt4v",
-      "limit": 6801,
+      "limit": 6661,
       "chinese_ratio": 1.0
     },
     {
       "name": "localized_narratives",
-      "limit": 144790,
+      "limit": 141794,
       "chinese_ratio": 1.0
     },
     {
       "name": "lvis_instruct4v",
-      "limit": 144790,
+      "limit": 141794,
       "chinese_ratio": 1.0
     },
     {
       "name": "screen2words",
-      "limit": 11503,
+      "limit": 11265,
       "chinese_ratio": 1.0
     },
     {
       "name": "sharegpt4o",
-      "limit": 41890,
+      "limit": 41023,
       "chinese_ratio": 1.0
     },
     {
       "name": "sharegpt4v(coco)",
-      "limit": 36576,
+      "limit": 35819,
       "chinese_ratio": 1.0
     },
     {
       "name": "sharegpt4v(knowledge)",
-      "limit": 1454,
+      "limit": 1424,
       "chinese_ratio": 1.0
     },
     {
       "name": "sharegpt4v(llava)",
-      "limit": 21928,
+      "limit": 21474,
       "chinese_ratio": 1.0
     },
     {
       "name": "sharegpt4v(sam)",
-      "limit": 6574,
+      "limit": 6438,
       "chinese_ratio": 1.0
     },
     {
       "name": "textcaps",
-      "limit": 16019,
+      "limit": 15688,
       "chinese_ratio": 1.0
     },
     {
       "name": "ureader_cap",
-      "limit": 66702,
+      "limit": 65322,
       "chinese_ratio": 1.0
     },
     {
       "name": "vistext",
-      "limit": 7290,
+      "limit": 7139,
       "chinese_ratio": 1.0
     },
     {
       "name": "LLaVA_Instruct_150K",
-      "limit": 101247,
+      "limit": 88718,
       "chinese_ratio": 1.0
     },
     {
       "name": "a_okvqa",
-      "limit": 35054,
+      "limit": 30716,
       "chinese_ratio": 1.0
     },
     {
       "name": "allava_vflan",
-      "limit": 113681,
+      "limit": 99612,
       "chinese_ratio": 1.0
     },
     {
       "name": "aokvqa",
-      "limit": 10618,
+      "limit": 9304,
       "chinese_ratio": 1.0
     },
     {
       "name": "art",
-      "limit": 3526,
+      "limit": 3089,
       "chinese_ratio": 1.0
     },
     {
       "name": "cambrian(filtered)_processed",
-      "limit": 53364,
+      "limit": 46759,
       "chinese_ratio": 1.0
     },
     {
       "name": "cocoqa",
-      "limit": 29715,
+      "limit": 26038,
       "chinese_ratio": 1.0
     },
     {
       "name": "drivelm",
-      "limit": 2614,
+      "limit": 2291,
       "chinese_ratio": 1.0
     },
     {
       "name": "idk",
-      "limit": 7141,
+      "limit": 6257,
       "chinese_ratio": 1.0
     },
     {
       "name": "indoor_qa",
-      "limit": 2151,
+      "limit": 1884,
       "chinese_ratio": 1.0
     },
     {
       "name": "lnqa",
-      "limit": 176546,
+      "limit": 154697,
       "chinese_ratio": 1.0
     },
     {
       "name": "lrv_normal(filtered)",
-      "limit": 6734,
+      "limit": 5900,
       "chinese_ratio": 1.0
     },
     {
       "name": "mmevol",
-      "limit": 102855,
+      "limit": 90126,
       "chinese_ratio": 1.0
     },
     {
       "name": "objects365_qa",
-      "limit": 176546,
+      "limit": 154697,
       "chinese_ratio": 1.0
     },
     {
       "name": "oodvqa",
-      "limit": 5449,
+      "limit": 4775,
       "chinese_ratio": 1.0
     },
     {
       "name": "sketchyvqa",
-      "limit": 5136,
+      "limit": 4500,
       "chinese_ratio": 1.0
     },
     {
       "name": "spark",
-      "limit": 2506,
+      "limit": 2196,
       "chinese_ratio": 1.0
     },
     {
       "name": "tallyqa",
-      "limit": 63351,
+      "limit": 55511,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "the_cauldron",
+      "limit": 154697,
       "chinese_ratio": 1.0
     },
     {
       "name": "vision_flan(filtered)",
-      "limit": 112966,
+      "limit": 98986,
       "chinese_ratio": 1.0
     },
     {
       "name": "visual7w",
-      "limit": 9223,
+      "limit": 8081,
       "chinese_ratio": 1.0
     },
     {
       "name": "visualwebinstruct(filtered)",
-      "limit": 169215,
+      "limit": 148273,
       "chinese_ratio": 1.0
     },
     {
       "name": "vizwiz(mathv360k)",
-      "limit": 4240,
+      "limit": 3715,
       "chinese_ratio": 1.0
     },
     {
       "name": "vqav2",
-      "limit": 53138,
+      "limit": 46562,
       "chinese_ratio": 1.0
     },
     {
       "name": "wildvision",
-      "limit": 214,
+      "limit": 187,
       "chinese_ratio": 1.0
     },
     {
       "name": "yesbut",
-      "limit": 2770,
+      "limit": 2429,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "RefCOCO",
+      "limit": 14795,
       "chinese_ratio": 1.0
     },
     {
       "name": "clevr",
-      "limit": 61455,
+      "limit": 58856,
       "chinese_ratio": 1.0
     },
     {
       "name": "clevr_math",
-      "limit": 61454,
+      "limit": 58856,
       "chinese_ratio": 1.0
     },
     {
       "name": "clevr_math(mathv360k)",
-      "limit": 4635,
+      "limit": 4439,
       "chinese_ratio": 1.0
     },
     {
       "name": "geomverse",
-      "limit": 8167,
+      "limit": 7822,
       "chinese_ratio": 1.0
     },
     {
       "name": "iconqa",
-      "limit": 23973,
+      "limit": 22960,
       "chinese_ratio": 1.0
     },
     {
       "name": "iconqa(mathv360k)",
-      "limit": 19831,
+      "limit": 18993,
       "chinese_ratio": 1.0
     },
     {
       "name": "mimic_cgd",
-      "limit": 62278,
+      "limit": 59646,
       "chinese_ratio": 1.0
     },
     {
       "name": "mmra",
-      "limit": 899,
+      "limit": 861,
       "chinese_ratio": 1.0
     },
     {
       "name": "nlvr2",
-      "limit": 44270,
+      "limit": 42398,
       "chinese_ratio": 1.0
     },
     {
       "name": "raven",
-      "limit": 36872,
+      "limit": 35314,
       "chinese_ratio": 1.0
     },
     {
       "name": "spatialsense",
-      "limit": 9165,
+      "limit": 8778,
       "chinese_ratio": 1.0
     },
     {
       "name": "spot_the_diff",
-      "limit": 7520,
+      "limit": 7202,
       "chinese_ratio": 1.0
     },
     {
       "name": "super_clevr(mathv360k)",
-      "limit": 7587,
+      "limit": 7266,
       "chinese_ratio": 1.0
     },
     {
       "name": "vsr",
-      "limit": 1894,
+      "limit": 1814,
       "chinese_ratio": 1.0
     },
     {

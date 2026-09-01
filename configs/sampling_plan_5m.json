@@ -7,7 +7,23 @@
     "face_emotion": "人脸情绪判断，敏感且泛化价值低（797）",
     "hateful_memes": "仇恨内容检测，属于安全对齐不是通用能力（8.5 千）",
     "memotion": "梗图情绪标注，同上（7 千）",
-    "mmsoc_memotion": "梗图情绪标注，同上（7 千）"
+    "mmsoc_memotion": "梗图情绪标注，同上（7 千）",
+    "text_openorca": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_OpenMathInstruct-2": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_openhermes_2_5": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_numinamath_cot": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_mathqa": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_mathinstruct": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_orcamath": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_codefeedback_filtered_instruction": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_infinitymath": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_wizardlm_evol": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_code_feedback": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_pythoncode25k": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_pythoncodealpaca": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_mathstepdpo10k": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_ruozhiba": "纯文本无图，parse_row 判 missing_image，多模态管线用不了",
+    "text_theoremqa": "纯文本无图，parse_row 判 missing_image，多模态管线用不了"
   },
   "categories": {
     "caption_图文描述": {
@@ -30,7 +46,8 @@
         "laion_gpt4v",
         "textcaps",
         "screen2words",
-        "vistext"
+        "vistext",
+        "Flickr30k"
       ]
     },
     "vqa_通用问答": {
@@ -61,7 +78,8 @@
         "drivelm",
         "spark",
         "indoor_qa",
-        "wildvision"
+        "wildvision",
+        "the_cauldron"
       ]
     },
     "reasoning_视觉推理": {
@@ -81,7 +99,8 @@
         "vsr",
         "spot_the_diff",
         "mmra",
-        "geomverse"
+        "geomverse",
+        "RefCOCO"
       ]
     },
     "ocr_文档": {
