@@ -296,6 +296,32 @@ FineVision 那种「一个数据集一个目录、几百个目录」的结构，
 
 `include` 和 `exclude` 都按目录名精确匹配。显式写在 `datasets` 里的条目会覆盖同名的自动发现结果。
 
+### 先勘察：哪些集合读得了
+
+一堆下载回来的集合里，不是每个本工具都读得了。先看格式和体积：
+
+```bash
+python scripts/survey_roots.py /mnt/data/mm_general
+```
+
+按目录统计扩展名和体积，分成「含 parquet/zip」和「需要先转格式」两组。**这只是按文件名分类，不是结论**：zip 里可能装的是散图不是 parquet，parquet 里可能只存了图片路径不存图片字节，两种都会被分到错的一组。所以再打开数据看一眼：
+
+```bash
+python scripts/probe_dataset.py /mnt/data/mm_general/OmniScience   # 单个
+python scripts/probe_dataset.py /mnt/data/mm_general --all         # 整个根目录
+```
+
+它取每个集合的第一个 parquet（或 zip 里的第一个 parquet 成员），用**流水线真正在用的那个行解析器**跑前几行，所以给出的判断就是实际跑起来的判断：
+
+| 判断 | 含义 | 怎么办 |
+| --- | --- | --- |
+| ✅ 可注册 | 图片字节和对话字段都在 | 直接写进 `datasets.json` |
+| ⚠️ 缺图 | 有文本，但图片是路径不是字节 | 先把图片合进 parquet |
+| ⚠️ 缺文本 | 有图片，但没有 `conversations`/`texts`/caption | 先补对话字段 |
+| ❌ 读不了 | 压根没有 parquet（纯视频、散图、模型权重） | 转格式，或者跳过 |
+
+会一并打印列名、前几行解析出几条、每条几张图，以及一条对话示例。`--rows` 控制看几行（默认 5）。
+
 ### 批量注册（把发现结果固化下来）
 
 `auto_discover` 是运行时扫描。想把结果固化成一份可编辑、可审查的注册表，用脚本生成：

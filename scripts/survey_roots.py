@@ -6,6 +6,10 @@ can even read. It handles directories of parquet and zip archives; a
 collection stored as json, arrow or loose images needs converting first.
 
     python scripts/survey_roots.py /mnt/.../mm_general
+
+This is an extension census, so it is a first pass, not a verdict: run
+``probe_dataset.py`` afterwards to open the data and settle the cases the
+file names cannot.
 """
 
 from __future__ import annotations
@@ -65,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n需要先转换格式: {len(needs_work)}")
     for line in needs_work:
         print(line)
+    # Extensions describe the outside of a collection only: a zip may hold
+    # jpegs rather than parquet shards, and a parquet may hold image paths
+    # rather than image bytes. Both land in the wrong bucket above.
+    print("\n以上只按扩展名分类。真实结论要打开数据才知道：")
+    print(f"  python scripts/probe_dataset.py {root} --all")
     return 0
 
 
