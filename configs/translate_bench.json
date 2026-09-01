@@ -1,0 +1,21 @@
+{
+  "_comment": "压测：测稳态吞吐，顺便验 max_model_len。5000 条远超 256 路并发，所以进度条上的速率是真实稳态值，不像 300 条那样只测出一次往返的延迟。olmOCR 和 DoclingMatix 是长文档，8192 上下文不够的话失败会集中在这两个集上。",
+  "dataset_registry": "configs/datasets.json",
+  "datasets": [
+    "chartqa",
+    "sharegpt4o",
+    "olmOCR-mix-0225-documents",
+    "DoclingMatix",
+    "densefusion_1m"
+  ],
+  "output_jsonl": "output/bench/train.jsonl",
+  "images_root": "output/bench/images",
+  "chinese_ratio": 1.0,
+  "seed": 42,
+  "limit_per_dataset": 1000,
+  "backend_config": "configs/backend_config.json",
+  "sample_prompt_file": "prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
+  "emit_raw": true,
+  "resume": false
+}
