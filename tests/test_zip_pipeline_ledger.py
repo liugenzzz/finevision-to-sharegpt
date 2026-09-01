@@ -330,3 +330,24 @@ def test_consume_paths_do_not_use_the_ingest_plan(tmp_path, monkeypatch):
 
     # A pending row below the watermark is exactly what consuming looks for.
     assert ledger.ingest_plans == [False]
+
+
+def test_the_ledger_is_closed_even_if_setup_fails_afterwards(tmp_path, monkeypatch):
+    """A leaked connection lives on for wait_timeout, so failures must close it."""
+
+    registry = make_zip_dataset(tmp_path, rows=2)
+    ledger = use_ledger(monkeypatch, RecordingLedger())
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("setup blew up after the ledger was opened")
+
+    monkeypatch.setattr(zip_pipeline, "_prepare_raw_outputs", boom)
+
+    with pytest.raises(RuntimeError, match="blew up"):
+        run_translate_zips(
+            load_zip_task_config(write_config(tmp_path, registry, emit_raw=True)),
+            _SuccessfulPool(),
+            _identity_handler,
+        )
+
+    assert ledger.closed

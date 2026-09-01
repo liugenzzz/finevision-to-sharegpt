@@ -11,6 +11,40 @@ class MySQLUnavailable(RuntimeError):
     """Raised when the driver is missing or the server cannot be reached."""
 
 
+def _explain_connect_failure(exc: Exception, config: MysqlConfig) -> str:
+    """Name the likely cause, because the driver text alone rarely does.
+
+    "Too many connections" in particular reads like a server misconfiguration
+    when it is usually stale connections left by aborted runs: MySQL holds
+    each one until wait_timeout, eight hours by default.
+    """
+
+    text = str(exc)
+    lowered = text.lower()
+    if "too many connections" in lowered:
+        return (
+            f"{text}\n"
+            f"  The server is at its connection limit. Check what is holding them:\n"
+            f"    SHOW STATUS LIKE 'Threads_connected';\n"
+            f"    SELECT command, COUNT(*), MAX(time) FROM information_schema.processlist "
+            f"GROUP BY command;\n"
+            f"  Many idle 'Sleep' connections mean earlier runs died before closing "
+            f"theirs; MySQL keeps those until wait_timeout. Either wait it out, raise\n"
+            f"    SET GLOBAL max_connections = 500;\n"
+            f"  or restart mysqld. Note this pool opens one connection per worker "
+            f"thread, so total backend concurrency is the number to size against."
+        )
+    if "access denied" in lowered:
+        return f"{text}\n  Check mysql.user/password in the task config and $FV_MYSQL_PASSWORD."
+    if "can't connect" in lowered or "connection refused" in lowered:
+        return (
+            f"{text}\n"
+            f"  Nothing is listening on {config.host}:{config.port}. Start it with\n"
+            f"    bash scripts/setup_local_mysql.sh /mnt/fv/mysql"
+        )
+    return text
+
+
 def import_driver() -> Any:
     try:
         import pymysql  # noqa: PLC0415
@@ -49,7 +83,7 @@ class ConnectionPool:
                 autocommit=True,
             )
         except Exception as exc:
-            raise MySQLUnavailable(str(exc)) from exc
+            raise MySQLUnavailable(_explain_connect_failure(exc, self.config)) from exc
 
     def connection(self) -> Any:
         conn = getattr(self._local, "conn", None)

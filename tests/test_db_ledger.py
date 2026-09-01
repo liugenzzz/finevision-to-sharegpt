@@ -209,3 +209,36 @@ def test_batch_writer_flush_is_a_noop_when_empty():
     BatchWriter(pool, "INSERT", batch_size=10, flush_interval_seconds=0).flush()
 
     assert pool.batches == []
+
+
+# -- connection failures explain themselves ----------------------------------
+
+
+def test_too_many_connections_points_at_stale_connections():
+    from finevision_to_sharegpt.db.pool import _explain_connect_failure
+
+    config = load_mysql_config({"host": "db", "user": "fv", "database": "d"})
+    message = _explain_connect_failure(Exception("(1040, 'Too many connections')"), config)
+
+    assert "Threads_connected" in message
+    assert "wait_timeout" in message
+    # The per-thread pool is the thing to size against, so say so.
+    assert "one connection per worker thread" in message
+
+
+def test_connection_refused_names_the_host_and_the_fix():
+    from finevision_to_sharegpt.db.pool import _explain_connect_failure
+
+    config = load_mysql_config({"host": "10.0.0.5", "port": 3307, "user": "fv", "database": "d"})
+    message = _explain_connect_failure(Exception("(2003, \"Can't connect to MySQL server\")"), config)
+
+    assert "10.0.0.5:3307" in message
+    assert "setup_local_mysql.sh" in message
+
+
+def test_an_unrecognised_error_is_passed_through_unchanged():
+    from finevision_to_sharegpt.db.pool import _explain_connect_failure
+
+    config = load_mysql_config({"host": "db", "user": "fv", "database": "d"})
+
+    assert _explain_connect_failure(Exception("something odd"), config) == "something odd"

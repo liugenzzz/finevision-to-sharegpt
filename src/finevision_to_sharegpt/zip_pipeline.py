@@ -89,6 +89,27 @@ def run_translate_zips(
     translation_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     image_store, datasets, ledger = _prepare_zip_run(config, truncate_failed=True)
+    # The ledger already holds a MySQL connection, so nothing may fail between
+    # here and the block that closes it: every leaked connection lives on for
+    # wait_timeout (eight hours by default) and a handful of aborted attempts
+    # is enough to exhaust max_connections.
+    with ledger:
+        return _run_translate_zips(
+            config, backend_pool, handler, progress_factory, translation_meta,
+            image_store, datasets, ledger,
+        )
+
+
+def _run_translate_zips(
+    config: ZipTaskConfig,
+    backend_pool: Any,
+    handler: Any,
+    progress_factory: Any | None,
+    translation_meta: dict[str, Any] | None,
+    image_store: ImageStore,
+    datasets: list[tuple[RegisteredDataset, DatasetRequest]],
+    ledger: ConsumptionLedger,
+) -> dict[str, Any]:
     meta = translation_meta or {}
     models_by_backend: dict[str, str] = meta.get("models_by_backend") or {}
     prompt_version: str = meta.get("prompt_version") or ""
@@ -161,46 +182,45 @@ def run_translate_zips(
                     item.stats["english"] += 1
                     _update_zip_progress(item.progress, item.stats)
 
-    with ledger:
-        for result in backend_pool.map_unordered(chinese_tasks(), handler):
-            task = result.item
-            metadata = task.metadata or {}
-            dataset_name = metadata.get("dataset")
-            dataset_stats = totals["datasets"].get(dataset_name) if dataset_name else None
-            version = versions.get(dataset_name) if dataset_name else None
-            if not result.ok:
-                if config.failed_path is not None:
-                    append_jsonl(
-                        config.failed_path,
-                        {
-                            "id": task.id,
-                            "error": result.error,
-                            "backend": result.backend_name,
-                            **metadata,
-                        },
-                    )
-                if version is not None:
-                    ledger.mark_failed(version, task.id, result.error)
-                totals["failed"] += 1
-                if dataset_stats is not None:
-                    dataset_stats["failed"] += 1
-                continue
-            _write_record(config, dataset_name, result.value)
-            if version is not None:
-                ledger.record_translation(
-                    version,
-                    task.id,
-                    result.value.get("conversations") or [],
-                    result.backend_name,
-                    models_by_backend.get(result.backend_name or "", ""),
-                    prompt_version,
-                    metadata.get("latency_ms"),
+    for result in backend_pool.map_unordered(chinese_tasks(), handler):
+        task = result.item
+        metadata = task.metadata or {}
+        dataset_name = metadata.get("dataset")
+        dataset_stats = totals["datasets"].get(dataset_name) if dataset_name else None
+        version = versions.get(dataset_name) if dataset_name else None
+        if not result.ok:
+            if config.failed_path is not None:
+                append_jsonl(
+                    config.failed_path,
+                    {
+                        "id": task.id,
+                        "error": result.error,
+                        "backend": result.backend_name,
+                        **metadata,
+                    },
                 )
-                ledger.mark_done(version, task.id, "zh")
-            totals["written"] += 1
+            if version is not None:
+                ledger.mark_failed(version, task.id, result.error)
+            totals["failed"] += 1
             if dataset_stats is not None:
-                dataset_stats["written"] += 1
-            _update_overall_progress(progress_state.get("overall"), totals)
+                dataset_stats["failed"] += 1
+            continue
+        _write_record(config, dataset_name, result.value)
+        if version is not None:
+            ledger.record_translation(
+                version,
+                task.id,
+                result.value.get("conversations") or [],
+                result.backend_name,
+                models_by_backend.get(result.backend_name or "", ""),
+                prompt_version,
+                metadata.get("latency_ms"),
+            )
+            ledger.mark_done(version, task.id, "zh")
+        totals["written"] += 1
+        if dataset_stats is not None:
+            dataset_stats["written"] += 1
+        _update_overall_progress(progress_state.get("overall"), totals)
 
     _finalize_zip_run(config, datasets, totals, prune_failures=True)
     return totals
