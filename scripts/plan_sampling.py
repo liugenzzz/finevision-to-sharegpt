@@ -11,6 +11,14 @@ dataset that no rule matched is reported rather than silently dropped.
     python scripts/plan_sampling.py --config configs/db_scan.json --dump
     python scripts/plan_sampling.py --config configs/db_scan.json \\
         --plan configs/sampling_plan.json -o configs/translate_pretrain.json
+
+``--counts`` takes the same numbers from a text file instead, so a mix can be
+planned before any ingest has happened — a full db-scan of millions of rows is
+a long wait to sit through just to find out a share is unreachable.
+
+    python scripts/plan_sampling.py --counts fv_counts.txt \\
+        --config configs/translate_zips.json \\
+        --plan configs/sampling_plan_8m.json -o configs/translate_8m.json
 """
 
 from __future__ import annotations
@@ -33,6 +41,29 @@ def available_rows(config_path: str, statuses: tuple[str, ...]) -> dict[str, int
     for row in run_db_status(config_path)["rows"]:
         if row["status"] in statuses:
             counts[row["dataset"]] = counts.get(row["dataset"], 0) + row["count"]
+    return counts
+
+
+def read_counts(path: Path | str) -> dict[str, int]:
+    """Read ``<count> <dataset>`` lines, as ``--dump`` and ``huggingface`` print them.
+
+    Counts keep their thousands separators and names keep their parentheses:
+    the file is meant to be pasted straight out of a terminal, not cleaned up
+    by hand first.
+    """
+
+    counts: dict[str, int] = {}
+    for number, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split(None, 1)
+        if len(parts) != 2:
+            raise ValueError(f"{path}:{number}: expected '<count> <dataset>', got {stripped!r}")
+        try:
+            counts[parts[1].strip()] = int(parts[0].replace(",", "").replace("_", ""))
+        except ValueError:
+            raise ValueError(f"{path}:{number}: {parts[0]!r} is not a row count") from None
     return counts
 
 
@@ -92,7 +123,17 @@ def allocate(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="plan a stratified sample across datasets")
-    parser.add_argument("--config", required=True, help="task config with the mysql section")
+    parser.add_argument("--config", required=True, help="task config to base the output on")
+    parser.add_argument(
+        "--counts",
+        help="read dataset row counts from a '<count> <dataset>' file instead of the ledger",
+    )
+    parser.add_argument(
+        "--chinese-ratio",
+        type=float,
+        default=1.0,
+        help="fraction of each dataset translated to Chinese; the rest is kept in English",
+    )
     parser.add_argument("--plan", help="category quota plan")
     parser.add_argument("-o", "--output", help="task config to write")
     parser.add_argument("--dump", action="store_true", help="just list datasets and row counts")
@@ -103,11 +144,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    statuses = tuple(item.strip() for item in args.status.split(",") if item.strip())
-    pools = available_rows(args.config, statuses)
-    if not pools:
-        print(f"no rows with status {statuses} in the ledger; run db-scan first", file=sys.stderr)
-        return 1
+    if args.counts:
+        pools = read_counts(args.counts)
+        if not pools:
+            print(f"{args.counts} lists no datasets", file=sys.stderr)
+            return 1
+    else:
+        statuses = tuple(item.strip() for item in args.status.split(",") if item.strip())
+        pools = available_rows(args.config, statuses)
+        if not pools:
+            print(f"no rows with status {statuses} in the ledger; run db-scan first", file=sys.stderr)
+            return 1
 
     if args.dump:
         for name in sorted(pools, key=lambda n: -pools[n]):
@@ -139,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
             max_share=rules.get("max_share_per_dataset"),
         )
         for name, count in sorted(allocation.items()):
-            requests.append({"name": name, "limit": count, "chinese_ratio": 1.0})
+            requests.append({"name": name, "limit": count, "chinese_ratio": args.chinese_ratio})
         got = sum(allocation.values())
         flag = "" if got >= target else f"   <- short by {target - got:,}"
         print(f"{category:<28}{target:>9,}{got:>11,}{len(allocation):>10}{flag}")
@@ -158,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     base = json.loads(Path(args.config).read_text(encoding="utf-8"))
     base["datasets"] = requests
     base.pop("limit_per_dataset", None)
-    base["chinese_ratio"] = 1.0
+    base["chinese_ratio"] = args.chinese_ratio
     output = Path(args.output)
     output.write_text(json.dumps(base, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {output} ({len(requests)} datasets, {allocated:,} samples)")

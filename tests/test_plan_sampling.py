@@ -209,3 +209,40 @@ def test_max_share_still_fills_the_target_when_others_can_cover():
 
     assert sum(capped.values()) == 10000
     assert max(capped.values()) <= 6000
+
+
+# -- counts from a file ------------------------------------------------------
+
+
+def test_counts_are_read_with_separators_and_parenthesised_names(tmp_path):
+    path = tmp_path / "counts.txt"
+    path.write_text(
+        "# pasted straight out of a terminal\n"
+        " 1,665,847  objects365_qa\n"
+        "   263,581  visualwebinstruct(filtered)\n"
+        "\n"
+        "       194  funsd\n",
+        encoding="utf-8",
+    )
+
+    assert plan_sampling.read_counts(path) == {
+        "objects365_qa": 1665847,
+        "visualwebinstruct(filtered)": 263581,
+        "funsd": 194,
+    }
+
+
+def test_a_line_that_is_not_a_count_names_the_file_and_line(tmp_path):
+    path = tmp_path / "counts.txt"
+    path.write_text("100 okvqa\nnot-a-number chartqa\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"counts.txt:2: 'not-a-number' is not a row count"):
+        plan_sampling.read_counts(path)
+
+
+def test_a_line_without_a_dataset_name_is_rejected(tmp_path):
+    path = tmp_path / "counts.txt"
+    path.write_text("100\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"counts.txt:1: expected"):
+        plan_sampling.read_counts(path)

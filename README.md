@@ -341,6 +341,31 @@ python -m finevision_to_sharegpt list-datasets --config configs/translate_zips.j
 
 会列出每个数据集的名字、形式、parquet 分片数和体积。**如果 `total` 只有 1 而你预期几百个，说明 `data_root` 指高了一层** —— 父目录被当成了一个巨型数据集。
 
+### 按类别配额抽样
+
+169 个数据集大小差 8600 倍（objects365_qa 166 万，funsd 194 条），统一的 `limit_per_dataset` 会让两者出一样多，配比失真。用类别配额来分：
+
+```bash
+# 不接 MySQL，直接从行数清单规划
+python scripts/plan_sampling.py --counts configs/fv_counts.txt \
+    --config configs/translate_zips.json \
+    --plan configs/sampling_plan_8m.json --chinese-ratio 0.7 \
+    -o configs/translate_8m.json
+
+# 或者已经灌过库，行数从账本取
+python scripts/plan_sampling.py --config configs/db_scan.json --dump
+python scripts/plan_sampling.py --config configs/db_scan.json \
+    --plan configs/sampling_plan_8m.json -o configs/translate_8m.json
+```
+
+`--counts` 读 `<行数> <数据集名>` 的文本（就是 `--dump` 的输出格式，带逗号和括号都行），所以**规划不必等 db-scan 跑完**——几百万行灌完库才发现某个类别配额够不着，是很贵的等待。
+
+计划文件里每个类别有两个数：`share` 是该类占 `total` 的比例，`max_share_per_dataset` 是单个数据集在本类配额里的上限。上限是必需的——不设的话 densefusion_1m 一家 105 万会吃掉 caption 类将近一半，同样的配额摊到十几个来源上混合质量更好。
+
+`--chinese-ratio 0.7` 表示 70% 翻成中文、30% 保留英文。挑中哪些是按 `seed + 样本 id` 哈希定的，同样的 seed 重跑挑中的是同一批。
+
+没有匹配到任何类别的数据集会被列出来并排除，不会悄悄混进去。
+
 ### 先跑通链路再谈量
 
 百万条的规划建立在「管道跑得通、译文能看」之上，而这两件事只有真后端能回答。`configs/translate_smoke.json` 就是干这个的：每个数据集取 2 条，覆盖尽量多的 schema 变体，不接 MySQL，`resume` 关掉（重跑就是真重跑）。

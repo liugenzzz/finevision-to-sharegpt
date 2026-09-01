@@ -1,0 +1,840 @@
+{
+  "dataset_registry": "configs/datasets.json",
+  "datasets": [
+    {
+      "name": "allava_laion",
+      "limit": 300331,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "coco_colors",
+      "limit": 111630,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "densefusion_1m",
+      "limit": 300331,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "google_landmarks",
+      "limit": 283111,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "image_textualization(filtered)",
+      "limit": 93969,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "laion_gpt4v",
+      "limit": 8778,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "localized_narratives",
+      "limit": 188743,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "lvis_instruct4v",
+      "limit": 210178,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "screen2words",
+      "limit": 14845,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sharegpt4o",
+      "limit": 54060,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sharegpt4v(coco)",
+      "limit": 47202,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sharegpt4v(knowledge)",
+      "limit": 1876,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sharegpt4v(llava)",
+      "limit": 28299,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sharegpt4v(sam)",
+      "limit": 8484,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "textcaps",
+      "limit": 20673,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "ureader_cap",
+      "limit": 86082,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "vistext",
+      "limit": 9408,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "LLaVA_Instruct_150K",
+      "limit": 151124,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "a_okvqa",
+      "limit": 52322,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "allava_vflan",
+      "limit": 169683,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "aokvqa",
+      "limit": 15848,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "art",
+      "limit": 5263,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "cambrian(filtered)_processed",
+      "limit": 79652,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "cocoqa",
+      "limit": 44354,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "drivelm",
+      "limit": 3902,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "idk",
+      "limit": 10658,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "indoor_qa",
+      "limit": 3210,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "lnqa",
+      "limit": 290136,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "lrv_normal(filtered)",
+      "limit": 10051,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mmevol",
+      "limit": 153524,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "objects365_qa",
+      "limit": 435117,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "oodvqa",
+      "limit": 8134,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sketchyvqa",
+      "limit": 7666,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "spark",
+      "limit": 3741,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "tallyqa",
+      "limit": 94559,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "vision_flan(filtered)",
+      "limit": 168616,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "visual7w",
+      "limit": 13766,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "visualwebinstruct(filtered)",
+      "limit": 252574,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "vizwiz(mathv360k)",
+      "limit": 6328,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "vqav2",
+      "limit": 79315,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "wildvision",
+      "limit": 319,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "yesbut",
+      "limit": 4138,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "clevr",
+      "limit": 68828,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "clevr_math",
+      "limit": 68828,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "clevr_math(mathv360k)",
+      "limit": 5192,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "geomverse",
+      "limit": 9147,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "iconqa",
+      "limit": 26850,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "iconqa(mathv360k)",
+      "limit": 22211,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mimic_cgd",
+      "limit": 69752,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mmra",
+      "limit": 1007,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "nlvr2",
+      "limit": 49582,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "raven",
+      "limit": 41297,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "spatialsense",
+      "limit": 10265,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "spot_the_diff",
+      "limit": 8423,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "super_clevr(mathv360k)",
+      "limit": 8497,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "vsr",
+      "limit": 2121,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "DoclingMatix",
+      "limit": 152679,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "bentham",
+      "limit": 7664,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "chrome_writting",
+      "limit": 6238,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "cocotext",
+      "limit": 11429,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "ctw",
+      "limit": 17169,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "datik",
+      "limit": 152679,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "docvqa",
+      "limit": 7202,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "est_vqa",
+      "limit": 13683,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "funsd",
+      "limit": 137,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "handwriting_forms",
+      "limit": 990,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "hw_squad",
+      "limit": 14460,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "iam",
+      "limit": 4003,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "iiit5k",
+      "limit": 1407,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "imgur5k",
+      "limit": 4194,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "infographic(gpt4v)",
+      "limit": 1401,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "infographic_vqa",
+      "limit": 3106,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "infographic_vqa_llava_format",
+      "limit": 1494,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "invoices_receipts",
+      "limit": 2130,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "k12_printing",
+      "limit": 152679,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "llavar_gpt4_20k",
+      "limit": 13988,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "maptext",
+      "limit": 141,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "ocrvqa",
+      "limit": 117157,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "olmOCR-mix-0225-books",
+      "limit": 10740,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "olmOCR-mix-0225-documents",
+      "limit": 152679,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "orand_car_a",
+      "limit": 1413,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "pdfvqa",
+      "limit": 6074,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "rendered_text",
+      "limit": 7068,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "slidevqa",
+      "limit": 1356,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sroie",
+      "limit": 23761,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "st_vqa",
+      "limit": 12191,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "svrd",
+      "limit": 3107,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "synthdog",
+      "limit": 152679,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "tal_ocr_eng",
+      "limit": 152679,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "textocr(gpt4v)",
+      "limit": 17714,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "textvqa",
+      "limit": 15510,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "ureader_ie",
+      "limit": 12243,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "ureader_kg_processed",
+      "limit": 26542,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "ureader_qa_processed",
+      "limit": 152679,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "visualmrc",
+      "limit": 2140,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "wordart",
+      "limit": 3395,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_chart",
+      "limit": 87481,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_table",
+      "limit": 34837,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "SynthChartNet",
+      "limit": 107840,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "Unichart",
+      "limit": 107840,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "chart2text",
+      "limit": 20191,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "chartqa",
+      "limit": 13678,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "dvqa",
+      "limit": 107840,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "figureqa",
+      "limit": 74889,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "figureqa(mathv360k)",
+      "limit": 13171,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "finqa",
+      "limit": 3951,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "hitab",
+      "limit": 1872,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "lrv_chart",
+      "limit": 1330,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mapqa",
+      "limit": 28021,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mapqa(mathv360k)",
+      "limit": 3913,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mmc_instruct",
+      "limit": 107840,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "multihiertt",
+      "limit": 5706,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "plotqa",
+      "limit": 107840,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "robut_sqa",
+      "limit": 6376,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "robut_wikisql",
+      "limit": 56158,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "robut_wtq",
+      "limit": 28642,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "sujet_finance",
+      "limit": 7340,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "tat_dqa",
+      "limit": 1653,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "tat_qa",
+      "limit": 1647,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "vqaonbd",
+      "limit": 29944,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_math",
+      "limit": 54224,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "SynthFormulaNet",
+      "limit": 78028,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "geo170k(align)",
+      "limit": 28689,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "geo170k(qa)",
+      "limit": 9836,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "geo3k",
+      "limit": 1700,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "geometry3k(mathv360k)",
+      "limit": 7904,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "geoqa+(mathv360k)",
+      "limit": 13949,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "geos(mathv360k)",
+      "limit": 405,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "hme100k",
+      "limit": 60546,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "intergps",
+      "limit": 1040,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "latex_handwritten",
+      "limit": 32173,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "latexformulas",
+      "limit": 78028,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mathwriting-google",
+      "limit": 78028,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mavis_math_metagen",
+      "limit": 70995,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "mavis_math_rule_geo",
+      "limit": 78028,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "tabmwp",
+      "limit": 18468,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "tabmwp(mathv360k)",
+      "limit": 18249,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "unigeo(mathv360k)",
+      "limit": 9710,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_chemical",
+      "limit": 8928,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_circuit",
+      "limit": 10453,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_diagram",
+      "limit": 34905,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_document",
+      "limit": 71163,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_graphic",
+      "limit": 26923,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_music",
+      "limit": 11949,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "CoSyn_400k_nutrition",
+      "limit": 6919,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "ai2d_merged",
+      "limit": 4850,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "arxivqa",
+      "limit": 99833,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "blockdiagramcomputerized",
+      "limit": 501,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "blockdiagramhandwritten",
+      "limit": 1027,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "datikz",
+      "limit": 47362,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "diagram_image_to_text",
+      "limit": 299,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "scienceqa",
+      "limit": 4968,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "scienceqa(nona_context)",
+      "limit": 19176,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "tqa",
+      "limit": 2744,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "SynthCodeNet",
+      "limit": 89992,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "aguvis-stage-1",
+      "limit": 89992,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "alfworldgpt",
+      "limit": 42252,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "groundui",
+      "limit": 12684,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "screenqa",
+      "limit": 75706,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "websight",
+      "limit": 9374,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "pathvqa",
+      "limit": 30314,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "pmc_vqa(mathv360k)",
+      "limit": 33395,
+      "chinese_ratio": 0.7
+    },
+    {
+      "name": "vqarad",
+      "limit": 291,
+      "chinese_ratio": 0.7
+    }
+  ],
+  "output_jsonl": "output/train.jsonl",
+  "chinese_ratio": 0.7,
+  "seed": 42,
+  "backend_config": "configs/backend_config.json",
+  "sample_prompt_file": "prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
+  "emit_raw": true,
+  "resume": true,
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "batch_size": 200,
+    "flush_interval_seconds": 5,
+    "claim_ttl_seconds": 3600,
+    "on_connect_error": "fail",
+    "store_conversations": false
+  }
+}
