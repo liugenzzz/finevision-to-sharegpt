@@ -181,3 +181,31 @@ def test_dump_lists_datasets_without_a_plan(tmp_path, fake_ledger, capsys):
 
     assert code == 0
     assert "textcaps" in out and "5 datasets" in out
+
+
+def test_max_share_stops_one_dataset_swamping_a_category():
+    # Without a cap the million-row set would supply almost the whole quota.
+    pools = {"huge": 1_000_000, "small_a": 50_000, "small_b": 50_000}
+
+    uncapped = plan_sampling.allocate(10000, pools)
+    capped = plan_sampling.allocate(10000, pools, max_share=0.3)
+
+    assert uncapped["huge"] > 9000
+    assert capped == {"huge": 3000, "small_a": 3000, "small_b": 3000}
+
+
+def test_a_cap_too_tight_for_the_member_count_cannot_fill_the_target():
+    # Three datasets capped at 30% each can only ever supply 90%; the planner
+    # reports the shortfall rather than quietly overshooting the cap.
+    capped = plan_sampling.allocate(
+        10000, {"a": 999999, "b": 999999, "c": 999999}, max_share=0.3
+    )
+
+    assert sum(capped.values()) == 9000
+
+
+def test_max_share_still_fills_the_target_when_others_can_cover():
+    capped = plan_sampling.allocate(10000, {"a": 999999, "b": 999999}, max_share=0.6)
+
+    assert sum(capped.values()) == 10000
+    assert max(capped.values()) <= 6000

@@ -1,30 +1,54 @@
 {
-  "_comment": "增量预训练通用部分。total 是这一批要抽的总条数；share 是各类别占比。patterns 是对数据集名的正则（不区分大小写），match 是精确名。先用 --dump 看真实数据集名再调。",
+  "_comment": "增量预训练通用部分 17.5 万条。数据集名取自 plan_sampling --dump 的真实输出。GQA / Visual Genome / RefCOCO / Flickr30k / COCO Captions / The Cauldron 在 FineVision 中不存在，相关类别已用等价数据集替代，见 docs。max_share_per_dataset 防止单个大数据集独吞类别配额。",
   "total": 175000,
   "categories": {
     "caption_图文描述": {
-      "share": 0.375,
-      "patterns": ["caption", "^sharegpt4[ov]", "localized_narratives", "textcaps", "image_textualization", "coco_colors"]
+      "share": 0.37,
+      "max_share_per_dataset": 0.18,
+      "match": [
+        "densefusion_1m", "localized_narratives", "image_textualization(filtered)",
+        "textcaps", "coco_colors", "ureader_cap", "laion_gpt4v",
+        "sharegpt4v(coco)", "sharegpt4v(llava)", "sharegpt4v(sam)", "sharegpt4o",
+        "allava_laion"
+      ]
     },
     "vqa_通用问答": {
       "share": 0.20,
-      "patterns": ["^vqav2$", "^a_okvqa$", "^okvqa$", "^cocoqa$", "^visual7w$", "^vizwiz", "^oodvqa$", "^vqarad$", "^pathvqa$"]
+      "max_share_per_dataset": 0.25,
+      "match": [
+        "vqav2", "a_okvqa", "aokvqa", "cocoqa", "visual7w", "lnqa",
+        "objects365_qa", "oodvqa", "sketchyvqa", "allava_vflan"
+      ]
     },
     "reasoning_视觉推理": {
       "share": 0.175,
-      "patterns": ["^gqa$", "visual_genome", "^clevr", "super_clevr", "^raven$", "^vsr$", "spatialsense", "spot_the_diff", "^mmra$", "^iconqa"]
+      "max_share_per_dataset": 0.22,
+      "match": [
+        "nlvr2", "clevr", "clevr_math", "super_clevr(mathv360k)", "raven",
+        "spatialsense", "vsr", "spot_the_diff", "mmra", "iconqa", "mimic_cgd"
+      ]
     },
     "ocr_文档": {
       "share": 0.125,
-      "patterns": ["textvqa", "docvqa", "ocr", "^st_vqa$", "^est_vqa$", "^sroie$", "^funsd$", "^iiit5k$", "^imgur5k$", "synthdog", "rendered_text", "^textocr", "visualmrc", "^iam$", "^bentham$"]
+      "max_share_per_dataset": 0.20,
+      "match": [
+        "ocrvqa", "textvqa", "docvqa", "st_vqa", "est_vqa", "textocr(gpt4v)",
+        "cocotext", "ctw", "visualmrc", "pdfvqa", "slidevqa", "infographic_vqa",
+        "olmOCR-mix-0225-documents", "sroie"
+      ]
     },
     "region_区域定位": {
       "share": 0.10,
-      "patterns": ["region", "refcoco", "entities", "^lvis_instruct4v$", "^tallyqa$", "screen2words", "^screenqa$"]
+      "max_share_per_dataset": 0.35,
+      "match": ["lvis_instruct4v", "tallyqa", "groundui", "screenqa", "screen2words"]
     },
     "chart_图表示意图": {
-      "share": 0.025,
-      "patterns": ["chartqa", "^chart2text$", "^ai2d", "figureqa", "^dvqa$", "^plotqa$", "unichart", "^mapqa$", "^tabmwp$", "infographic"]
+      "share": 0.03,
+      "max_share_per_dataset": 0.25,
+      "match": [
+        "chartqa", "chart2text", "figureqa", "dvqa", "plotqa", "ai2d_merged",
+        "vistext", "Unichart", "lrv_chart", "infographic(gpt4v)"
+      ]
     }
   }
 }

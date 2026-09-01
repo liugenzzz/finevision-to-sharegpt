@@ -46,12 +46,25 @@ def match_datasets(names: list[str], rules: dict) -> list[str]:
     return matched
 
 
-def allocate(target: int, pools: dict[str, int]) -> dict[str, int]:
+def allocate(
+    target: int, pools: dict[str, int], max_share: float | None = None
+) -> dict[str, int]:
     """Split ``target`` across datasets, proportional to what each one has.
 
     A dataset can be smaller than its proportional share, so whatever it
     cannot supply is redistributed over the datasets that still have room.
+
+    ``max_share`` caps any single dataset at that fraction of ``target``.
+    Without it one huge set swamps its category: densefusion_1m alone holds
+    a million rows and would supply half the caption quota on its own, which
+    is a worse mix than the same quota spread over a dozen sources.
     """
+
+    ceilings = dict(pools)
+    if max_share is not None:
+        cap = max(1, int(target * max_share))
+        ceilings = {name: min(room, cap) for name, room in pools.items()}
+    pools = ceilings
 
     allocation = {name: 0 for name in pools}
     remaining = min(target, sum(pools.values()))
@@ -120,7 +133,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{category:<28}{target:>9,}{'0':>11}{'0':>10}   <- NO MATCH")
             continue
         claimed.update(matched)
-        allocation = allocate(target, {name: pools[name] for name in matched})
+        allocation = allocate(
+            target,
+            {name: pools[name] for name in matched},
+            max_share=rules.get("max_share_per_dataset"),
+        )
         for name, count in sorted(allocation.items()):
             requests.append({"name": name, "limit": count, "chinese_ratio": 1.0})
         got = sum(allocation.values())
