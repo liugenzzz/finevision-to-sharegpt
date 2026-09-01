@@ -59,20 +59,6 @@
           "enable_thinking": false
         }
       }
-    },
-    {
-      "name": "remote-zjlab",
-      "_note": "浙江实验室的远端实例，容量未知且可能与他人共享，先给 16 路试；跑起来看它是不是拖后腿，是就调小或删掉。api_key 需要自己填。",
-      "api_base": "http://jb-aionlineinferenceservice-161248564342717824-8000-nhss-job.z2120.nhss.zhejianglab.com:31080/v1/chat/completions",
-      "model": "Qwen3.8-27B",
-      "api_key": "在这里填远端的 key",
-      "concurrency": 16,
-      "weight": 1,
-      "extra_body": {
-        "chat_template_kwargs": {
-          "enable_thinking": false
-        }
-      }
     }
   ]
 }
