@@ -127,8 +127,21 @@ def _field_text(content: Any) -> str:
 
 
 def _extract_caption(row: Mapping[str, Any]) -> str:
+    """First usable caption, whether the column holds one or several.
+
+    Caption sets routinely ship several descriptions per image — Flickr30k
+    carries five in a list — and reading only the ``str`` case rejects every
+    row of such a dataset for missing text. One caption is enough to build the
+    sample, so the first non-empty one wins rather than gluing them together
+    into an answer no annotator wrote.
+    """
+
     for field in CAPTION_FIELDS:
         value = row.get(field)
         if isinstance(value, str) and value.strip():
             return value.strip()
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    return item.strip()
     return ""

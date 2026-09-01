@@ -108,3 +108,33 @@ def test_parse_row_rejects_rows_without_usable_text():
 
     assert not parsed.accepted
     assert parsed.reason == "missing_text"
+
+
+def test_parse_row_uses_the_first_caption_when_a_column_holds_several():
+    # Flickr30k-style: one image, five human-written descriptions.
+    row = {
+        "image": b"png bytes",
+        "caption": ["A dog runs.", "A dog is running fast.", "A brown dog."],
+    }
+
+    parsed = parse_row(row, source_id="flickr30k:0", caption_prompt="请描述这张图片。")
+
+    assert parsed.accepted
+    assert [turn.value if hasattr(turn, "value") else turn.text for turn in parsed.sample.turns] == [
+        "请描述这张图片。",
+        "A dog runs.",
+    ]
+
+
+def test_parse_row_skips_empty_entries_in_a_caption_list():
+    parsed = parse_row({"image": b"png", "caption": ["", "   ", "A cat."]}, source_id="c:0")
+
+    assert parsed.accepted
+    assert parsed.sample.turns[1].text == "A cat."
+
+
+def test_parse_row_still_reports_missing_text_for_an_empty_caption_list():
+    parsed = parse_row({"image": b"png", "caption": []}, source_id="c:0")
+
+    assert not parsed.accepted
+    assert parsed.reason == "missing_text"
