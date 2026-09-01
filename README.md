@@ -366,6 +366,21 @@ python scripts/plan_sampling.py --config configs/db_scan.json \
 
 没有匹配到任何类别的数据集会被列出来并排除，不会悄悄混进去。
 
+### 全翻模式：先翻完，配比留到查询时
+
+类别配额决定的是**混合比例**，`--cap` 决定的是**覆盖范围**：计划里列到的每个数据集取 `min(实际行数, CAP)`，不管类别 share。
+
+```bash
+python scripts/plan_sampling.py --counts configs/fv_counts.txt \
+    --config configs/translate_zips.json \
+    --plan configs/sampling_plan_5m.json --cap 200000 --chinese-ratio 1.0 \
+    -o configs/translate_full.json
+```
+
+配上 `chinese_ratio: 1.0` 和 `store_conversations: true`，库里每条样本**同时有英文原文和中文译文**——中英配比、类别配比就都从「翻译时决定」变成「查询时决定」，之后想换多少种比例都不用重翻。
+
+上限的作用只是不让某一个巨型数据集吃掉比任何混合都用不上的 GPU 时间。20 万这个值完整覆盖了 500 万方案里的每一个配额（那里单集最多 176,546 条），所以「先全翻一遍」不会漏掉原方案要的任何数据。
+
 ### 先跑通链路再谈量
 
 百万条的规划建立在「管道跑得通、译文能看」之上，而这两件事只有真后端能回答。`configs/translate_smoke.json` 就是干这个的：每个数据集取 2 条，覆盖尽量多的 schema 变体，不接 MySQL，`resume` 关掉（重跑就是真重跑）。

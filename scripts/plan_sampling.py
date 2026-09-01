@@ -121,12 +121,65 @@ def allocate(
     return {name: count for name, count in allocation.items() if count > 0}
 
 
+def _plan_capped(args: Any, plan: dict, pools: dict[str, int], names: list[str]) -> int:
+    """Take min(rows, cap) from every dataset the plan lists.
+
+    Category shares decide a *mix*; this decides *coverage*. Translating a
+    dataset whole means any later mix can draw from it by query alone, with no
+    second translation pass — the cap only stops one huge set from costing more
+    GPU time than any mix would ever use of it.
+    """
+
+    requests: list[dict] = []
+    claimed: set[str] = set()
+    print(f"{'category':<28}{'datasets':>10}{'rows':>12}{'capped':>8}")
+    print("-" * 58)
+    for category, rules in plan["categories"].items():
+        matched = [name for name in match_datasets(names, rules) if name not in claimed]
+        claimed.update(matched)
+        capped = 0
+        rows = 0
+        for name in sorted(matched):
+            limit = min(pools[name], args.cap)
+            if pools[name] > args.cap:
+                capped += 1
+            rows += limit
+            requests.append({"name": name, "limit": limit, "chinese_ratio": args.chinese_ratio})
+        print(f"{category:<28}{len(matched):>10}{rows:>12,}{capped:>8}")
+
+    unmapped = [name for name in names if name not in claimed]
+    allocated = sum(item["limit"] for item in requests)
+    print("-" * 58)
+    print(f"{'TOTAL':<28}{len(requests):>10}{allocated:>12,}")
+    print(f"\n每集上限 {args.cap:,}；{sum(1 for item in requests if item['limit'] == pools[item['name']])}"
+          f"/{len(requests)} 个数据集被完整翻译")
+    if unmapped:
+        print(f"\n{len(unmapped)} 个数据集不在计划里，已排除:")
+        for name in unmapped[:40]:
+            print(f"   {pools[name]:>10,}  {name}")
+
+    base = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    base["datasets"] = requests
+    base.pop("limit_per_dataset", None)
+    base["chinese_ratio"] = args.chinese_ratio
+    output = Path(args.output)
+    output.write_text(json.dumps(base, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"\nwrote {output} ({len(requests)} datasets, {allocated:,} samples)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="plan a stratified sample across datasets")
     parser.add_argument("--config", required=True, help="task config to base the output on")
     parser.add_argument(
         "--counts",
         help="read dataset row counts from a '<count> <dataset>' file instead of the ledger",
+    )
+    parser.add_argument(
+        "--cap",
+        type=int,
+        help="translate everything instead of a quota: take min(rows, CAP) from every dataset "
+             "the plan lists, ignoring the category shares",
     )
     parser.add_argument(
         "--chinese-ratio",
@@ -169,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
     plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
     total = int(plan["total"])
     names = sorted(pools)
+    if args.cap:
+        return _plan_capped(args, plan, pools, names)
     requests: list[dict] = []
     claimed: set[str] = set()
     print(f"{'category':<28}{'target':>9}{'allocated':>11}{'datasets':>10}")

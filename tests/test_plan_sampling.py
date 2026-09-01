@@ -246,3 +246,72 @@ def test_a_line_without_a_dataset_name_is_rejected(tmp_path):
 
     with pytest.raises(ValueError, match=r"counts.txt:1: expected"):
         plan_sampling.read_counts(path)
+
+
+# -- cap mode ----------------------------------------------------------------
+
+
+def write_plan(tmp_path, categories):
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({"total": 100, "categories": categories}), encoding="utf-8")
+    return path
+
+
+def test_cap_mode_takes_whole_datasets_up_to_the_cap(tmp_path, capsys):
+    counts = tmp_path / "counts.txt"
+    counts.write_text("500000 big\n30000 small\n", encoding="utf-8")
+    plan = write_plan(tmp_path, {"all": {"share": 1.0, "match": ["big", "small"]}})
+    base = tmp_path / "base.json"
+    base.write_text(json.dumps({"dataset_registry": "r.json", "limit_per_dataset": 9}), encoding="utf-8")
+    output = tmp_path / "out.json"
+
+    code = plan_sampling.main([
+        "--counts", str(counts), "--config", str(base), "--plan", str(plan),
+        "--cap", "100000", "--chinese-ratio", "1.0", "-o", str(output),
+    ])
+
+    assert code == 0
+    written = json.loads(output.read_text(encoding="utf-8"))
+    assert written["datasets"] == [
+        {"name": "big", "limit": 100000, "chinese_ratio": 1.0},
+        {"name": "small", "limit": 30000, "chinese_ratio": 1.0},
+    ]
+    # The per-dataset cap replaces the blanket limit, which must not linger.
+    assert "limit_per_dataset" not in written
+    assert "1/2 个数据集被完整翻译" in capsys.readouterr().out
+
+
+def test_cap_mode_excludes_datasets_no_category_lists(tmp_path, capsys):
+    counts = tmp_path / "counts.txt"
+    counts.write_text("100 kept\n200 unlisted\n", encoding="utf-8")
+    plan = write_plan(tmp_path, {"all": {"share": 1.0, "match": ["kept"]}})
+    base = tmp_path / "base.json"
+    base.write_text(json.dumps({"dataset_registry": "r.json"}), encoding="utf-8")
+    output = tmp_path / "out.json"
+
+    plan_sampling.main([
+        "--counts", str(counts), "--config", str(base), "--plan", str(plan),
+        "--cap", "1000", "-o", str(output),
+    ])
+
+    assert [item["name"] for item in json.loads(output.read_text(encoding="utf-8"))["datasets"]] == ["kept"]
+    assert "unlisted" in capsys.readouterr().out
+
+
+def test_a_dataset_matched_by_two_categories_is_only_claimed_once(tmp_path):
+    counts = tmp_path / "counts.txt"
+    counts.write_text("100 shared\n", encoding="utf-8")
+    plan = write_plan(tmp_path, {
+        "first": {"share": 0.5, "match": ["shared"]},
+        "second": {"share": 0.5, "match": ["shared"]},
+    })
+    base = tmp_path / "base.json"
+    base.write_text(json.dumps({"dataset_registry": "r.json"}), encoding="utf-8")
+    output = tmp_path / "out.json"
+
+    plan_sampling.main([
+        "--counts", str(counts), "--config", str(base), "--plan", str(plan),
+        "--cap", "1000", "-o", str(output),
+    ])
+
+    assert len(json.loads(output.read_text(encoding="utf-8"))["datasets"]) == 1

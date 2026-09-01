@@ -1,0 +1,842 @@
+{
+  "_comment": "全翻模式：163 个数据集每个取 min(实际行数, 20 万)，共 913 万条，chinese_ratio=1.0 每条都翻。配上 store_conversations=true，库里每条样本同时有英文原文和中文译文，中英配比就从「翻译时决定」变成「查询时决定」，换比例不用重翻。上限 20 万完整覆盖 500 万方案里的每一个配额（那里单集最多 176,546 条）。",
+  "dataset_registry": "configs/datasets.json",
+  "datasets": [
+    {
+      "name": "allava_laion",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "coco_colors",
+      "limit": 118287,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "densefusion_1m",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "google_landmarks",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "image_textualization(filtered)",
+      "limit": 99573,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "laion_gpt4v",
+      "limit": 9301,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "localized_narratives",
+      "limit": 199998,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "lvis_instruct4v",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "screen2words",
+      "limit": 15730,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sharegpt4o",
+      "limit": 57284,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sharegpt4v(coco)",
+      "limit": 50017,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sharegpt4v(knowledge)",
+      "limit": 1988,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sharegpt4v(llava)",
+      "limit": 29986,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sharegpt4v(sam)",
+      "limit": 8990,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "textcaps",
+      "limit": 21906,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "ureader_cap",
+      "limit": 91215,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "vistext",
+      "limit": 9969,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "LLaVA_Instruct_150K",
+      "limit": 157710,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "a_okvqa",
+      "limit": 54602,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "allava_vflan",
+      "limit": 177078,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "aokvqa",
+      "limit": 16539,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "art",
+      "limit": 5492,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "cambrian(filtered)_processed",
+      "limit": 83123,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "cocoqa",
+      "limit": 46287,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "drivelm",
+      "limit": 4072,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "idk",
+      "limit": 11123,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "indoor_qa",
+      "limit": 3350,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "lnqa",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "lrv_normal(filtered)",
+      "limit": 10489,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mmevol",
+      "limit": 160215,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "objects365_qa",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "oodvqa",
+      "limit": 8488,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sketchyvqa",
+      "limit": 8000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "spark",
+      "limit": 3904,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "tallyqa",
+      "limit": 98680,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "vision_flan(filtered)",
+      "limit": 175964,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "visual7w",
+      "limit": 14366,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "visualwebinstruct(filtered)",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "vizwiz(mathv360k)",
+      "limit": 6604,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "vqav2",
+      "limit": 82772,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "wildvision",
+      "limit": 333,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "yesbut",
+      "limit": 4318,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "clevr",
+      "limit": 70000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "clevr_math",
+      "limit": 70000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "clevr_math(mathv360k)",
+      "limit": 5280,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "geomverse",
+      "limit": 9303,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "iconqa",
+      "limit": 27307,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "iconqa(mathv360k)",
+      "limit": 22589,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mimic_cgd",
+      "limit": 70939,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mmra",
+      "limit": 1024,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "nlvr2",
+      "limit": 50426,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "raven",
+      "limit": 42000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "spatialsense",
+      "limit": 10440,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "spot_the_diff",
+      "limit": 8566,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "super_clevr(mathv360k)",
+      "limit": 8642,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "vsr",
+      "limit": 2157,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "DoclingMatix",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "bentham",
+      "limit": 10843,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "chrome_writting",
+      "limit": 8825,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "cocotext",
+      "limit": 16169,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "ctw",
+      "limit": 24290,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "datik",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "docvqa",
+      "limit": 10189,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "est_vqa",
+      "limit": 19358,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "funsd",
+      "limit": 194,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "handwriting_forms",
+      "limit": 1400,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "hw_squad",
+      "limit": 20457,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "iam",
+      "limit": 5663,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "iiit5k",
+      "limit": 1990,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "imgur5k",
+      "limit": 5934,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "infographic(gpt4v)",
+      "limit": 1982,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "infographic_vqa",
+      "limit": 4394,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "infographic_vqa_llava_format",
+      "limit": 2113,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "invoices_receipts",
+      "limit": 3013,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "k12_printing",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "llavar_gpt4_20k",
+      "limit": 19790,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "maptext",
+      "limit": 200,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "ocrvqa",
+      "limit": 165746,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "olmOCR-mix-0225-books",
+      "limit": 15194,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "olmOCR-mix-0225-documents",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "orand_car_a",
+      "limit": 1999,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "pdfvqa",
+      "limit": 8593,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "rendered_text",
+      "limit": 10000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "slidevqa",
+      "limit": 1919,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sroie",
+      "limit": 33616,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "st_vqa",
+      "limit": 17247,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "svrd",
+      "limit": 4396,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "synthdog",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "tal_ocr_eng",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "textocr(gpt4v)",
+      "limit": 25060,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "textvqa",
+      "limit": 21943,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "ureader_ie",
+      "limit": 17320,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "ureader_kg_processed",
+      "limit": 37550,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "ureader_qa_processed",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "visualmrc",
+      "limit": 3027,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "wordart",
+      "limit": 4804,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_chart",
+      "limit": 116814,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_table",
+      "limit": 46518,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "SynthChartNet",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "Unichart",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "chart2text",
+      "limit": 26961,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "chartqa",
+      "limit": 18265,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "dvqa",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "figureqa",
+      "limit": 100000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "figureqa(mathv360k)",
+      "limit": 17587,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "finqa",
+      "limit": 5276,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "hitab",
+      "limit": 2500,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "lrv_chart",
+      "limit": 1776,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mapqa",
+      "limit": 37417,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mapqa(mathv360k)",
+      "limit": 5225,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mmc_instruct",
+      "limit": 168178,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "multihiertt",
+      "limit": 7619,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "plotqa",
+      "limit": 157070,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "robut_sqa",
+      "limit": 8514,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "robut_wikisql",
+      "limit": 74989,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "robut_wtq",
+      "limit": 38246,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "sujet_finance",
+      "limit": 9801,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "tat_dqa",
+      "limit": 2207,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "tat_qa",
+      "limit": 2199,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "vqaonbd",
+      "limit": 39986,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_math",
+      "limit": 66714,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "SynthFormulaNet",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "geo170k(align)",
+      "limit": 35297,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "geo170k(qa)",
+      "limit": 12101,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "geo3k",
+      "limit": 2091,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "geometry3k(mathv360k)",
+      "limit": 9724,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "geoqa+(mathv360k)",
+      "limit": 17162,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "geos(mathv360k)",
+      "limit": 498,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "hme100k",
+      "limit": 74492,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "intergps",
+      "limit": 1280,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "latex_handwritten",
+      "limit": 39583,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "latexformulas",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mathwriting-google",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mavis_math_metagen",
+      "limit": 87348,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "mavis_math_rule_geo",
+      "limit": 99986,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "tabmwp",
+      "limit": 22722,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "tabmwp(mathv360k)",
+      "limit": 22452,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "unigeo(mathv360k)",
+      "limit": 11949,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_chemical",
+      "limit": 8942,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_circuit",
+      "limit": 10470,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_diagram",
+      "limit": 34963,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_document",
+      "limit": 71282,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_graphic",
+      "limit": 26968,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_music",
+      "limit": 11969,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "CoSyn_400k_nutrition",
+      "limit": 6931,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "ai2d_merged",
+      "limit": 4858,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "arxivqa",
+      "limit": 100000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "blockdiagramcomputerized",
+      "limit": 502,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "blockdiagramhandwritten",
+      "limit": 1029,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "datikz",
+      "limit": 47441,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "diagram_image_to_text",
+      "limit": 300,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "scienceqa",
+      "limit": 4976,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "scienceqa(nona_context)",
+      "limit": 19208,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "tqa",
+      "limit": 2749,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "SynthCodeNet",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "aguvis-stage-1",
+      "limit": 200000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "alfworldgpt",
+      "limit": 45073,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "groundui",
+      "limit": 13531,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "screenqa",
+      "limit": 80761,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "websight",
+      "limit": 10000,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "pathvqa",
+      "limit": 32632,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "pmc_vqa(mathv360k)",
+      "limit": 35948,
+      "chinese_ratio": 1.0
+    },
+    {
+      "name": "vqarad",
+      "limit": 313,
+      "chinese_ratio": 1.0
+    }
+  ],
+  "output_jsonl": "output/full/train.jsonl",
+  "chinese_ratio": 1.0,
+  "seed": 42,
+  "backend_config": "configs/backend_config.json",
+  "sample_prompt_file": "prompts/translate_sample_zh.txt",
+  "utterance_prompt_file": "prompts/translate_utterance_zh.txt",
+  "emit_raw": true,
+  "resume": true,
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "batch_size": 200,
+    "flush_interval_seconds": 5,
+    "claim_ttl_seconds": 3600,
+    "on_connect_error": "fail",
+    "store_conversations": true,
+    "_store_conversations_note": "存英文原文。关掉的话账本只有 id/图片路径/状态，省几 GB，但英文那部分样本 db-export 导不出来（源文本不在库里），库就当不成动态配比的唯一数据源。这个开关不能事后补：关着跑完的行不会回填。"
+  }
+}
