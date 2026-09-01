@@ -40,7 +40,15 @@ def expand_env(value: Any) -> str:
         name = match.group(1)
         found = os.environ.get(name)
         if found is None:
-            raise ValueError(f"environment variable {name} referenced by mysql config is not set")
+            # This fires mostly on a fresh shell, where the export from the
+            # previous session is gone. Saying so beats a bare "is not set".
+            raise ValueError(
+                f"environment variable {name} referenced by mysql config is not set.\n"
+                f"  This is a shell issue, not a database one: run\n"
+                f"    export {name}='<your password>'\n"
+                f"  and to stop it recurring in new shells:\n"
+                f"    echo \"export {name}='<your password>'\" >> ~/.bashrc"
+            )
         return found
 
     return _ENV_PATTERN.sub(replace, text)

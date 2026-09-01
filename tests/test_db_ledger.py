@@ -38,10 +38,18 @@ def test_load_mysql_config_requires_core_fields():
         load_mysql_config({"host": "db", "user": "fv"})
 
 
-def test_expand_env_reports_missing_variable(monkeypatch):
+def test_expand_env_reports_missing_variable_with_the_fix(monkeypatch):
     monkeypatch.delenv("FV_ABSENT", raising=False)
-    with pytest.raises(ValueError, match="FV_ABSENT"):
+
+    with pytest.raises(ValueError) as caught:
         expand_env("${FV_ABSENT}")
+
+    message = str(caught.value)
+    assert "FV_ABSENT" in message
+    # A fresh shell is the usual cause, so the message names the actual fix
+    # instead of reading like a database failure.
+    assert "export FV_ABSENT=" in message
+    assert "~/.bashrc" in message
 
 
 # -- fingerprint -----------------------------------------------------------
