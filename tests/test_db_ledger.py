@@ -242,3 +242,110 @@ def test_an_unrecognised_error_is_passed_through_unchanged():
     config = load_mysql_config({"host": "db", "user": "fv", "database": "d"})
 
     assert _explain_connect_failure(Exception("something odd"), config) == "something odd"
+
+
+# -- the pool is bounded -----------------------------------------------------
+
+
+class _FakeDriver:
+    """Counts how many connections were ever opened, and how many are live."""
+
+    def __init__(self):
+        self.opened = 0
+        self.live = 0
+        self.peak_live = 0
+        self.lock = __import__("threading").Lock()
+
+    def connect(self, **kwargs):
+        with self.lock:
+            self.opened += 1
+            self.live += 1
+            self.peak_live = max(self.peak_live, self.live)
+        return _FakeConnection(self)
+
+
+class _FakeConnection:
+    def __init__(self, driver):
+        self.driver = driver
+        self.closed = False
+
+    def cursor(self):
+        import contextlib
+        import time
+
+        @contextlib.contextmanager
+        def _cursor():
+            time.sleep(0.002)  # hold it long enough for threads to contend
+            yield self
+
+        return _cursor()
+
+    def execute(self, *args, **kwargs):
+        return None
+
+    def close(self):
+        if not self.closed:
+            self.closed = True
+            with self.driver.lock:
+                self.driver.live -= 1
+
+
+def _pool_with_fake_driver(monkeypatch, size):
+    from finevision_to_sharegpt.db import pool as pool_module
+
+    driver = _FakeDriver()
+    monkeypatch.setattr(pool_module, "import_driver", lambda: driver)
+    config = load_mysql_config(
+        {"host": "h", "user": "u", "database": "d", "pool_size": size}
+    )
+    return pool_module.ConnectionPool(config), driver
+
+
+def test_many_threads_share_a_bounded_number_of_connections(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    pool, driver = _pool_with_fake_driver(monkeypatch, size=4)
+
+    with ThreadPoolExecutor(max_workers=64) as workers:
+        list(workers.map(lambda _: pool.run(lambda cursor: cursor.execute("SELECT 1")), range(400)))
+
+    # 64 worker threads, but never more than the pool size open at once. The
+    # old per-thread design would have opened 64.
+    assert driver.peak_live <= 4
+    assert driver.opened <= 4
+    pool.close()
+    assert driver.live == 0
+
+
+def test_a_failed_call_discards_its_connection_instead_of_returning_it(monkeypatch):
+    pool, driver = _pool_with_fake_driver(monkeypatch, size=2)
+
+    def boom(cursor):
+        raise RuntimeError("statement failed")
+
+    with pytest.raises(MySQLUnavailable, match="statement failed"):
+        pool.run(boom, retries=1)
+
+    # Two attempts, each dropping its connection; none left half-used.
+    assert driver.opened == 2
+    assert driver.live == 0
+
+
+def test_close_releases_every_connection(monkeypatch):
+    pool, driver = _pool_with_fake_driver(monkeypatch, size=3)
+    for _ in range(3):
+        pool.run(lambda cursor: None)
+
+    pool.close()
+
+    assert driver.live == 0
+    with pytest.raises(MySQLUnavailable, match="closed"):
+        pool.acquire()
+
+
+def test_pool_size_is_configurable_and_defaults_to_eight():
+    default = load_mysql_config({"host": "h", "user": "u", "database": "d"})
+    tuned = load_mysql_config({"host": "h", "user": "u", "database": "d", "pool_size": 32})
+
+    assert default.pool_size == 8
+    assert tuned.pool_size == 32

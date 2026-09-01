@@ -25,6 +25,8 @@ class MysqlConfig:
     on_connect_error: str = "fallback"
     connect_timeout: int = 10
     store_conversations: bool = True
+    pool_size: int = 8
+    checkout_timeout_seconds: int = 60
 
     @property
     def fail_fast(self) -> bool:
@@ -87,4 +89,6 @@ def load_mysql_config(data: dict[str, Any] | None) -> MysqlConfig | None:
         on_connect_error=on_connect_error,
         connect_timeout=max(1, int(data.get("connect_timeout", 10))),
         store_conversations=bool(data.get("store_conversations", True)),
+        pool_size=max(1, int(data.get("pool_size", 8))),
+        checkout_timeout_seconds=max(1, int(data.get("checkout_timeout_seconds", 60))),
     )

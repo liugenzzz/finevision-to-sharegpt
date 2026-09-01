@@ -16,6 +16,7 @@
     "flush_interval_seconds": 5,
     "claim_ttl_seconds": 3600,
     "on_connect_error": "fail",
-    "store_conversations": false
+    "store_conversations": false,
+    "pool_size": 8
   }
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import queue
 import threading
 import time
 from typing import Any, Callable
@@ -56,19 +57,28 @@ def import_driver() -> Any:
 
 
 class ConnectionPool:
-    """One connection per worker thread, reconnected on a dropped socket.
+    """A bounded pool of connections shared by all threads.
 
-    Translation runs one thread per backend slot, so a shared connection would
-    serialize every write. A thread-local connection keeps writes parallel
-    without the bookkeeping of a checkout pool.
+    Translation runs one worker thread per backend slot, and those threads
+    spend nearly all their time waiting on the model, not on MySQL. Giving
+    each one a permanent connection would size the server's connection limit
+    against total concurrency for no benefit; a small shared pool serves
+    hundreds of workers because every database call is short and batched.
+
+    Connections are created lazily up to ``size``, handed out one at a time,
+    and returned when the call finishes. A call that errors discards its
+    connection rather than returning it, since its state is unknown.
     """
 
-    def __init__(self, config: MysqlConfig) -> None:
+    def __init__(self, config: MysqlConfig, size: int | None = None) -> None:
         self.config = config
+        self.size = max(1, size if size is not None else config.pool_size)
+        self.checkout_timeout = float(config.checkout_timeout_seconds)
         self.driver = import_driver()
-        self._local = threading.local()
-        self._all: list[Any] = []
+        self._idle: queue.LifoQueue = queue.LifoQueue()
+        self._created = 0
         self._lock = threading.Lock()
+        self._closed = False
 
     def _connect(self) -> Any:
         try:
@@ -85,17 +95,49 @@ class ConnectionPool:
         except Exception as exc:
             raise MySQLUnavailable(_explain_connect_failure(exc, self.config)) from exc
 
-    def connection(self) -> Any:
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = self._connect()
-            self._local.conn = conn
-            with self._lock:
-                self._all.append(conn)
-        return conn
+    def acquire(self) -> Any:
+        if self._closed:
+            raise MySQLUnavailable("connection pool is closed")
+        try:
+            return self._idle.get_nowait()
+        except queue.Empty:
+            pass
+        with self._lock:
+            room = self._created < self.size
+            if room:
+                self._created += 1
+        if room:
+            try:
+                return self._connect()
+            except Exception:
+                with self._lock:
+                    self._created -= 1
+                raise
+        try:
+            return self._idle.get(timeout=self.checkout_timeout)
+        except queue.Empty as exc:
+            raise MySQLUnavailable(
+                f"no connection free within {self.checkout_timeout:.0f}s "
+                f"(pool size {self.size}). Raise mysql.pool_size if the database "
+                f"is genuinely the bottleneck, or lower backend concurrency."
+            ) from exc
+
+    def release(self, conn: Any) -> None:
+        if self._closed:
+            self._destroy(conn)
+            return
+        self._idle.put(conn)
+
+    def _destroy(self, conn: Any) -> None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        with self._lock:
+            self._created = max(0, self._created - 1)
 
     def run(self, action: Callable[[Any], Any], retries: int = 1) -> Any:
-        """Run ``action`` with a cursor, reconnecting once on a dead socket.
+        """Run ``action`` with a cursor, retrying once on a dead connection.
 
         Internal MySQL instances close idle connections on ``wait_timeout``,
         which a long parquet scan hits routinely between flushes.
@@ -103,37 +145,31 @@ class ConnectionPool:
 
         last_error: Exception | None = None
         for attempt in range(retries + 1):
-            conn = self.connection()
+            conn = self.acquire()
             try:
                 with conn.cursor() as cursor:
-                    return action(cursor)
+                    result = action(cursor)
             except Exception as exc:
                 last_error = exc
+                # The connection may be mid-statement or dead; either way its
+                # state is unknown, so it is dropped rather than reused.
+                self._destroy(conn)
                 if attempt >= retries:
                     break
-                self._discard_local(conn)
                 time.sleep(0.5 * (attempt + 1))
-        raise MySQLUnavailable(str(last_error)) from last_error
-
-    def _discard_local(self, conn: Any) -> None:
-        try:
-            conn.close()
-        except Exception:
-            pass
-        with self._lock:
-            if conn in self._all:
-                self._all.remove(conn)
-        self._local.conn = None
+                continue
+            self.release(conn)
+            return result
+        raise MySQLUnavailable(_explain_connect_failure(last_error, self.config)) from last_error
 
     def close(self) -> None:
-        with self._lock:
-            connections, self._all = self._all, []
-        for conn in connections:
+        self._closed = True
+        while True:
             try:
-                conn.close()
-            except Exception:
-                pass
-        self._local = threading.local()
+                conn = self._idle.get_nowait()
+            except queue.Empty:
+                break
+            self._destroy(conn)
 
 
 class BatchWriter:
