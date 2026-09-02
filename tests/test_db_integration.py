@@ -127,16 +127,25 @@ def test_schema_creation_is_idempotent(clean_database):
 
 
 def test_two_runs_with_separate_outputs_never_repeat_a_sample(tmp_path, clean_database, mysql_settings):
+    """换个输出目录续跑，不会重复抽到同一条样本。
+
+    `limit` 是总量而非每轮增量，所以第二轮要拿到新数据得把配额调大——
+    仍是 4 的话账本会正确判定配额已满而一条不写。
+    """
+
     registry = make_zip_dataset(tmp_path, rows=10)
     first, _ = write_config(tmp_path, registry, mysql_settings, name="first.json", limit_per_dataset=4)
-    second, _ = write_config(tmp_path, registry, mysql_settings, name="second.json", limit_per_dataset=4)
+    same_quota, _ = write_config(tmp_path, registry, mysql_settings, name="same.json", limit_per_dataset=4)
+    raised, _ = write_config(tmp_path, registry, mysql_settings, name="second.json", limit_per_dataset=8)
 
     first_stats = run_export_zips(first)
-    second_stats = run_export_zips(second)
+    same_stats = run_export_zips(same_quota)
+    second_stats = run_export_zips(raised)
 
     first_ids = _ids(first.output_jsonl)
-    second_ids = _ids(second.output_jsonl)
+    second_ids = _ids(raised.output_jsonl)
     assert first_stats["written"] == 4
+    assert same_stats["written"] == 0
     assert second_stats["written"] == 4
     assert set(first_ids).isdisjoint(second_ids)
     assert second_ids == [f"okvqa:nested/part.parquet:{i}" for i in range(4, 8)]
@@ -436,3 +445,123 @@ def _execute(mysql_settings, sql):
         ledger.pool.run(lambda cursor: cursor.execute(sql))
     finally:
         ledger.close()
+
+
+def test_db_restore_makes_a_lost_ledger_skip_already_translated_rows(
+    tmp_path, clean_database, mysql_settings
+):
+    """账本随卷丢失、JSONL 尚在时，恢复后续跑必须一条都不重做。"""
+
+    from finevision_to_sharegpt.db_commands import run_db_restore
+
+    registry = make_zip_dataset(tmp_path, rows=8)
+    config, config_path = write_config(
+        tmp_path, registry, mysql_settings, chinese_ratio=1.0, limit_per_dataset=5
+    )
+
+    first = run_translate_zips(config, _SuccessfulPool(), _handler)
+    assert first["written"] == 5
+
+    # 模拟整个卷被清空：库没了，产出还在。
+    _drop_and_recreate(mysql_settings)
+
+    restored = run_db_restore(config_path)
+    assert restored["source_rows"] == 5
+    assert restored["translations"] == 5
+
+    # 关键断言：恢复之后再跑同一份配置，配额已经被占满，不该再翻任何一条。
+    second = run_translate_zips(config, _SuccessfulPool(), _handler)
+    assert second["written"] == 0
+    assert second["skipped"] == 5
+
+
+def test_db_restore_without_the_cursor_would_redo_everything(
+    tmp_path, clean_database, mysql_settings
+):
+    """水位线是恢复的必要部分，不是可选项——去掉它恢复就等于没做。"""
+
+    from finevision_to_sharegpt.db_commands import run_db_restore
+
+    registry = make_zip_dataset(tmp_path, rows=8)
+    config, config_path = write_config(
+        tmp_path, registry, mysql_settings, chinese_ratio=1.0, limit_per_dataset=5
+    )
+    run_translate_zips(config, _SuccessfulPool(), _handler)
+    _drop_and_recreate(mysql_settings)
+    run_db_restore(config_path)
+
+    # 只抹掉水位线，行仍然是 done。
+    _execute(mysql_settings, "DELETE FROM dataset_cursor")
+    again = run_translate_zips(config, _SuccessfulPool(), _handler)
+
+    assert again["written"] == 5
+
+
+def test_db_restore_dry_run_touches_nothing(tmp_path, clean_database, mysql_settings):
+    from finevision_to_sharegpt.db_commands import run_db_restore
+
+    registry = make_zip_dataset(tmp_path, rows=4)
+    config, config_path = write_config(tmp_path, registry, mysql_settings, chinese_ratio=1.0)
+    run_translate_zips(config, _SuccessfulPool(), _handler)
+    _drop_and_recreate(mysql_settings)
+
+    stats = run_db_restore(config_path, dry_run=True)
+
+    assert stats["dry_run"] is True
+    assert stats["source_rows"] == 4
+    assert _query_one(mysql_settings, "SELECT COUNT(*) FROM sample_source") == 0
+
+
+def _execute(mysql_settings, sql):
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+
+    ledger = MySQLLedger(load_mysql_config(mysql_settings))
+    try:
+        ledger.pool.run(lambda cursor: cursor.execute(sql))
+    finally:
+        ledger.close()
+
+
+def _drop_and_recreate(mysql_settings):
+    for table in ("sample_translation", "sample_source", "dataset_cursor", "dataset_version"):
+        _execute(mysql_settings, f"DROP TABLE IF EXISTS {table}")
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+
+    ledger = MySQLLedger(load_mysql_config(mysql_settings))
+    ledger.close()
+
+
+def test_resume_does_not_exceed_the_quota_in_mysql_mode(tmp_path, clean_database, mysql_settings):
+    """水位线让已完成的行读都不读，配额必须由账本补报，否则每次续跑再翻一份。"""
+
+    registry = make_zip_dataset(tmp_path, rows=8)
+    config, _ = write_config(
+        tmp_path, registry, mysql_settings, chinese_ratio=1.0, limit_per_dataset=5
+    )
+
+    first = run_translate_zips(config, _SuccessfulPool(), _handler)
+    second = run_translate_zips(config, _SuccessfulPool(), _handler)
+
+    assert first["written"] == 5
+    assert second["written"] == 0
+    assert second["skipped"] == 5
+    # 配额是「这个数据集最终贡献多少条」，不是「每轮新翻多少条」。
+    assert first["written"] + second["written"] == 5
+
+
+def test_raising_the_quota_lets_a_resume_continue(tmp_path, clean_database, mysql_settings):
+    """补报不能把数据集锁死：调大 limit 之后应当接着翻。"""
+
+    registry = make_zip_dataset(tmp_path, rows=8)
+    first_config, _ = write_config(
+        tmp_path, registry, mysql_settings, name="a.json", chinese_ratio=1.0, limit_per_dataset=5
+    )
+    run_translate_zips(first_config, _SuccessfulPool(), _handler)
+
+    bigger, _ = write_config(
+        tmp_path, registry, mysql_settings, name="b.json", chinese_ratio=1.0, limit_per_dataset=8
+    )
+    second = run_translate_zips(bigger, _SuccessfulPool(), _handler)
+
+    assert second["written"] == 3
+    assert second["skipped"] == 5

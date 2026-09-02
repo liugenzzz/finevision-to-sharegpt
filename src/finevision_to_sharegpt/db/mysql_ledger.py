@@ -80,6 +80,22 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW()
 """
 
+def _count_done_before(cursor: Any, version_id: int, parquet_name: str, row_index: int) -> int:
+    """起点之下已产出的行数。
+
+    只数 `done`：`rejected` 没有产出任何样本，不该占用配额。
+    """
+
+    if row_index <= 0:
+        return 0
+    cursor.execute(
+        "SELECT COUNT(*) FROM sample_source "
+        "WHERE version_id = %s AND parquet_name = %s AND row_index < %s AND status = 'done'",
+        (version_id, parquet_name, row_index),
+    )
+    return int(cursor.fetchone()[0])
+
+
 _UNFINISHED_PREDICATE = (
     "(status IN ('pending','failed') "
     "OR (status = 'claimed' AND claim_expires_at IS NOT NULL AND claim_expires_at < NOW()))"
@@ -223,6 +239,7 @@ class MySQLLedger(ConsumptionLedger):
             watermark = int(row[0]) + 1 if row is not None else 0
             if for_ingest:
                 return ScanPlan(start_row=watermark, gap_end=watermark)
+            done_before = _count_done_before(cursor, version_id, parquet_name, watermark)
             cursor.execute(
                 "SELECT MIN(row_index) FROM sample_source "
                 f"WHERE version_id = %s AND parquet_name = %s AND {_UNFINISHED_PREDICATE}",
@@ -232,7 +249,9 @@ class MySQLLedger(ConsumptionLedger):
             unfinished = int(found[0]) if found is not None and found[0] is not None else None
             start = watermark if unfinished is None else min(unfinished, watermark)
             if start >= watermark:
-                return ScanPlan(start_row=start, gap_end=watermark)
+                return ScanPlan(
+                    start_row=start, gap_end=watermark, skipped_before=done_before
+                )
             cursor.execute(
                 "SELECT sample_id FROM sample_source "
                 "WHERE version_id = %s AND parquet_name = %s AND row_index >= %s AND row_index < %s "
@@ -241,7 +260,14 @@ class MySQLLedger(ConsumptionLedger):
                 (version_id, parquet_name, start, watermark),
             )
             consumed = {str(item[0]) for item in cursor.fetchall()}
-            return ScanPlan(start_row=start, gap_end=watermark, consumed_ids=consumed)
+            # 缺口内的行会被读到并逐条计入 skipped，所以这里只数起点之下的，
+            # 两者相加才不会重复计数。
+            return ScanPlan(
+                start_row=start,
+                gap_end=watermark,
+                consumed_ids=consumed,
+                skipped_before=_count_done_before(cursor, version_id, parquet_name, start),
+            )
 
         return self.pool.run(query)
 

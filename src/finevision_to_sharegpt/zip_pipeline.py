@@ -298,6 +298,10 @@ def _iter_dataset_rows(
         versions[dataset.name] = version
         for parquet in iter_dataset_parquets(dataset, tmp_root):
             plan = ledger.scan_plan(version, parquet.name, for_ingest=for_ingest)
+            # 水位线之下的行不会被读到，配额得由账本补报，否则续跑会超额。
+            if plan.skipped_before:
+                totals["skipped"] += plan.skipped_before
+                dataset_stats["skipped"] += plan.skipped_before
             progress = _progress_rows(
                 iter_parquet_rows_from(parquet.path, start_row=plan.start_row),
                 progress_factory,

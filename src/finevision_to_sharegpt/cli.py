@@ -17,6 +17,7 @@ from .db_commands import (
     prompt_version,
     run_db_export,
     run_db_init,
+    run_db_restore,
     run_db_status,
     run_db_storage,
     run_list_datasets,
@@ -105,6 +106,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     db_storage = subparsers.add_parser("db-storage", help="show table sizes and bytes per row")
     db_storage.add_argument("--config", required=True)
+
+    db_restore = subparsers.add_parser(
+        "db-restore", help="rebuild the ledger from JSONL output after losing the database"
+    )
+    db_restore.add_argument("--config", required=True)
+    db_restore.add_argument("--output-dir", help="产出目录，默认取配置里 output_jsonl 的上级")
+    db_restore.add_argument("--dry-run", action="store_true", help="只统计，不写库")
     return parser
 
 
@@ -168,6 +176,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "db-storage":
         print(json.dumps(run_db_storage(args.config), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "db-restore":
+        stats = run_db_restore(args.config, args.output_dir, dry_run=args.dry_run)
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
         return 0
     raise ValueError(f"unknown command: {args.command}")
 

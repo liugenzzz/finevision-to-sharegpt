@@ -8,7 +8,10 @@ from typing import Any
 from .config_loader import ZipTaskConfig, load_zip_task_config
 from .dataset_registry import load_dataset_registry
 from .db import MysqlConfig
-from .json_io import append_jsonl, jsonl_to_json_array, truncate_file
+from .db.ledger import DatasetVersion
+from .image_store import _safe_path_part
+from .json_io import append_jsonl, iter_json_records, jsonl_to_json_array, truncate_file
+from .translator import DEFAULT_SAMPLE_PROMPT, DEFAULT_UTTERANCE_PROMPT, load_prompt
 
 
 def prompt_version(*prompts: str) -> str:
@@ -149,3 +152,125 @@ def run_list_datasets(config_path: Path | str, limit: int | None = None) -> dict
         "datasets": shown,
         "truncated": len(rows) - len(shown),
     }
+
+
+def _split_sample_id(sample_id: str) -> tuple[str, str, int] | None:
+    """``<源标识>:<分片路径>:<行号>`` 拆成三段。
+
+    分片路径本身可能带斜杠（`nested/part.parquet`），但两端的源标识和行号都
+    不含冒号，所以从两头切最稳妥。
+    """
+
+    head, _, tail = sample_id.rpartition(":")
+    if not head or not tail.isdigit():
+        return None
+    source_id, _, parquet_name = head.partition(":")
+    if not source_id or not parquet_name:
+        return None
+    return source_id, parquet_name, int(tail)
+
+
+def _read_records(path: Path) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    return {
+        str(record["id"]): record
+        for record in iter_json_records(path)
+        if record.get("id") is not None
+    }
+
+
+def run_db_restore(
+    config_path: Path | str,
+    output_dir: Path | str | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """把已产出的 JSONL 灌回账本。
+
+    账本和产出分处两个卷时，账本可能整个丢掉而 JSONL 完好。此时若带着空库
+    续跑，`resume` 一条都跳不过去，已翻的会重做一遍，还会往同一个 JSONL 里
+    追加重复记录。
+
+    只补 `sample_source` 的 `done` 行是不够的：`is_consumed` 对水位线之上的
+    行直接返回未消费，所以 `dataset_cursor` 必须一起重建，否则恢复等于没做。
+    """
+
+    from .db.mysql_ledger import MySQLLedger
+
+    config = load_zip_task_config(config_path)
+    _require_mysql(config)
+    root = Path(output_dir) if output_dir else config.output_jsonl.parent
+    registry = load_dataset_registry(config.dataset_registry)
+
+    prompt = prompt_version(
+        load_prompt(config.sample_prompt_file, DEFAULT_SAMPLE_PROMPT),
+        load_prompt(config.utterance_prompt_file, DEFAULT_UTTERANCE_PROMPT),
+    )
+    totals: dict[str, Any] = {"datasets": {}, "source_rows": 0, "translations": 0, "skipped_ids": 0}
+    ledger = None if dry_run else MySQLLedger(_require_mysql(config), batch_id=config.batch_id)
+    try:
+        for name in sorted(registry.datasets):
+            dataset = registry.datasets[name]
+            folder = root / _safe_path_part(name)
+            chinese = _read_records(folder / config.output_jsonl.name)
+            english = _read_records(folder / "raw.jsonl")
+            if not chinese and not english:
+                continue
+
+            version = (
+                DatasetVersion(dataset=name)
+                if ledger is None
+                else ledger.open_dataset(name, dataset.source_path, config.images_root)
+            )
+            marks: dict[str, int] = {}
+            restored = translated = 0
+            for sample_id in sorted(set(chinese) | set(english)):
+                parts = _split_sample_id(sample_id)
+                if parts is None:
+                    totals["skipped_ids"] += 1
+                    continue
+                _source_id, parquet_name, row_index = parts
+                # 英文优先做源文本；只有中文时退而用中文，至少保住行的存在。
+                source = english.get(sample_id) or chinese[sample_id]
+                lang = "zh" if sample_id in chinese else "en"
+                if ledger is not None:
+                    ledger.claim(
+                        version,
+                        parquet_name,
+                        row_index,
+                        sample_id,
+                        source.get("conversations") or [],
+                        [str(item) for item in source.get("images") or []],
+                    )
+                    ledger.mark_done(version, sample_id, lang)
+                restored += 1
+                if lang == "zh":
+                    if ledger is not None:
+                        ledger.record_translation(
+                            version,
+                            sample_id,
+                            chinese[sample_id].get("conversations") or [],
+                            None,
+                            "",
+                            prompt,
+                            None,
+                        )
+                    translated += 1
+                if row_index > marks.get(parquet_name, -1):
+                    marks[parquet_name] = row_index
+
+            if ledger is not None:
+                # 水位线必须跟着重建，否则 is_consumed 认为这些行从未被扫过。
+                ledger.flush()
+                for parquet_name, row_index in marks.items():
+                    ledger.note_scanned(version, parquet_name, row_index)
+                ledger.flush()
+            totals["datasets"][name] = {"source_rows": restored, "translations": translated}
+            totals["source_rows"] += restored
+            totals["translations"] += translated
+    finally:
+        if ledger is not None:
+            ledger.flush()
+            ledger.close()
+    totals["dry_run"] = dry_run
+    return totals

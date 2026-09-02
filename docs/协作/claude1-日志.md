@@ -4,6 +4,60 @@
 
 ---
 
+## 2026-09-02 · db-restore 从 JSONL 灌回账本；顺带修掉 MySQL 模式下续跑超配额
+
+**动了**：`db_commands.py`、`db/ledger.py`、`db/mysql_ledger.py`、
+`cli.py`（共有文件，按约定声明）、`zip_pipeline.py`（共有文件，按约定声明）、
+`tests/test_db_integration.py`、`tests/test_cli.py`
+
+**为什么**：回应「待 Claude 1 处理」第二条。用户确认翻译后续还会跑，所以那
+36.7 万条必须回到账本——否则续跑时 `resume` 一条都跳不过去，23.7 小时的 GPU
+产出会重做一遍，还会往同一个 JSONL 里追加重复记录。
+
+新增 `db-restore`：按注册表逐个数据集读 `<out>/<dataset>/{train,raw}.jsonl`，
+还原 `sample_source`（`done`）与 `sample_translation`，`--dry-run` 只统计。
+
+**关键点：只补 `done` 行是不够的。** `is_consumed` 对 `row_index >= gap_end`
+直接返回未消费，而 `gap_end` 来自 `dataset_cursor`。不重建水位线，恢复完照样
+全部重翻。有一个测试专门去掉水位线来证明这一点。
+
+**写这个功能时发现了一个更要紧的 bug，不是恢复独有的。** 你把 `limit` 改成
+总量语义、把 `skipped` 计入配额之后，MySQL 路径仍然会超额：水位线让已完成的行
+**根本没被读到**，`skipped` 因此不增长，判断被绕过。实测 `limit=5` 的 8 行
+数据集，第一轮 5 条、第二轮又 3 条，合计 8。用户的 500 万按每数据集配额跑，
+**每次重启都会在每个数据集上超额**，十几天里必然中断多次。
+
+修法：`ScanPlan` 增加 `skipped_before`，`scan_plan` 数出起点之下 `done` 的行数
+交给流水线补进配额。只数 `done`——`rejected` 没有产出任何样本，不该占配额。
+缺口内的行照旧逐条计数，两者相加不重复。
+
+**对另一侧的影响**：**三点。**
+
+① **`zip_pipeline.py` 我加了三行**：拿到 `plan` 之后把 `plan.skipped_before`
+累加进 `totals["skipped"]` 和 `dataset_stats["skipped"]`。你的 `limit_reached`
+一个字没动，只是现在它能看见那些从未被读到的行了。
+
+② **`ScanPlan` 多了一个字段** `skipped_before`，默认 0。`JsonlLedger` 返回默认
+值即可——文件模式每行都会读到，`skipped` 本来就是准的，补报反而会重复计数。
+
+③ **我改了一个旧测试** `test_two_runs_with_separate_outputs_never_repeat_a_sample`。
+它是我早先写的，编码的是旧的「本轮增量」语义（两轮各 limit=4，期望各写 4 条）。
+你改成总量语义之后它本该失败，只是 MySQL 路径的绕过让它一直蒙混过关；我修完
+才暴露。现在改成「同样配额再跑写 0 条，调大到 8 才继续写 4 条」，它原本要证明的
+「换输出目录不重复抽样」保住了。
+
+**还剩一个你提过的边角我没解决**：缺口内 `rejected` 的行仍会计入配额（走
+`consumed_ids` → `skipped`），而起点之下的 `rejected` 现在不计。拒绝率高的
+数据集续跑后配额行为仍不一致。彻底修要让流水线能区分「跳过因为已完成」和
+「跳过因为已拒绝」，得动 `is_consumed` 的契约。眼下 `limit_per_dataset` 为
+`None` 的全量灌库不受影响，先记在这里。
+
+**验证**：251 passed（连真 MySQL 8.4）/ 236 passed + 15 skipped（无库）。
+新增 5 个集成用例：恢复后续跑跳过、抹掉水位线就白做、dry-run 不写库、
+续跑不超配额、调大配额能继续。
+
+---
+
 ## 2026-09-02 · `setup_local_mysql.sh` 可装进已有环境，BASE 不再有默认值
 
 **动了**：`scripts/setup_local_mysql.sh`

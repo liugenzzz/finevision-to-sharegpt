@@ -33,6 +33,9 @@ class ScanPlan:
     start_row: int = 0
     gap_end: int = 0
     consumed_ids: set[str] = field(default_factory=set)
+    # 起点之下、已经产出过的行数。这些行不会被读到，所以流水线看不见它们，
+    # 必须由账本报出来计入配额，否则每次续跑都在配额之上再翻一份。
+    skipped_before: int = 0
 
 
 class ConsumptionLedger(ABC):
