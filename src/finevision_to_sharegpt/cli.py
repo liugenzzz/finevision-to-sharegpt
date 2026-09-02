@@ -99,7 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     db_export.add_argument("--output", required=True)
     db_export.add_argument("--dataset")
     db_export.add_argument("--batch-id")
-    db_export.add_argument("--lang", choices=["zh", "en"])
+    db_export.add_argument("--lang", choices=["zh", "en"], help="按分配语言筛（这条被分到哪一侧）")
+    db_export.add_argument("--source-lang", help="按源文本语言筛，如 zh；中文原生的集合用这个")
 
     db_status = subparsers.add_parser("db-status", help="show per-dataset row counts by status")
     db_status.add_argument("--config", required=True)
@@ -178,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
             dataset=args.dataset,
             batch_id=args.batch_id,
             lang=args.lang,
+            source_lang=args.source_lang,
         )
         print(json.dumps(stats, ensure_ascii=False))
         return 0

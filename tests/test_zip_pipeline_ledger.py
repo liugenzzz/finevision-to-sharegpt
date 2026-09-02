@@ -30,8 +30,10 @@ class RecordingLedger(ConsumptionLedger):
         self.flushes = 0
         self.closed = False
 
-    def open_dataset(self, dataset, zip_path, images_root):
-        return DatasetVersion(dataset=dataset, version_id=7, source_hash="deadbeef")
+    def open_dataset(self, dataset, zip_path, images_root, source_lang="en"):
+        return DatasetVersion(
+            dataset=dataset, version_id=7, source_hash="deadbeef", source_lang=source_lang
+        )
 
     def scan_plan(self, version, parquet_name, for_ingest=False):
         self.ingest_plans.append(for_ingest)

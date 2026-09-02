@@ -24,13 +24,14 @@ __all__ = ["MySQLLedger", "MySQLUnavailable"]
 _UPSERT_SOURCE = """
 INSERT INTO sample_source
   (version_id, dataset, sample_id, parquet_name, row_index, conversations,
-   image_paths, image_count, status, lang_assigned, reject_reason, batch_id,
-   claimed_at, claim_expires_at)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, NOW(),
+   image_paths, image_count, status, source_lang, lang_assigned, reject_reason,
+   batch_id, claimed_at, claim_expires_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, NOW(),
         DATE_ADD(NOW(), INTERVAL %s SECOND))
 ON DUPLICATE KEY UPDATE
   parquet_name     = VALUES(parquet_name),
   row_index        = VALUES(row_index),
+  source_lang      = VALUES(source_lang),
   conversations    = VALUES(conversations),
   image_paths      = VALUES(image_paths),
   image_count      = VALUES(image_count),
@@ -164,6 +165,12 @@ class MySQLLedger(ConsumptionLedger):
         def create(cursor: Any) -> None:
             for statement in schema.table_statements(self.config.collation):
                 cursor.execute(statement)
+            # 建过表的库拿不到后加的列，补一遍。空库时这里全是 no-op。
+            for table, column, definition in schema.added_columns():
+                query, params = schema.missing_column_query(table, column)
+                cursor.execute(query, params)
+                if int(cursor.fetchone()[0]) == 0:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
         self.pool.run(create)
 
@@ -172,7 +179,13 @@ class MySQLLedger(ConsumptionLedger):
 
     # -- dataset versions -----------------------------------------------
 
-    def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion:
+    def open_dataset(
+        self,
+        dataset: str,
+        source_path: Path,
+        images_root: Path,
+        source_lang: str = "en",
+    ) -> DatasetVersion:
         fingerprint = source_fingerprint(source_path)
 
         def resolve(cursor: Any) -> int:
@@ -205,7 +218,12 @@ class MySQLLedger(ConsumptionLedger):
         version_id = self.pool.run(resolve)
         self.ensure_view(dataset)
         self._recover_expired(version_id)
-        return DatasetVersion(dataset=dataset, version_id=version_id, source_hash=fingerprint.source_hash)
+        return DatasetVersion(
+            dataset=dataset,
+            version_id=version_id,
+            source_hash=fingerprint.source_hash,
+            source_lang=source_lang,
+        )
 
     def _recover_expired(self, version_id: int) -> int:
         """Return crashed-mid-flight claims to the pool of pending samples."""
@@ -317,6 +335,7 @@ class MySQLLedger(ConsumptionLedger):
                 json.dumps(image_paths, ensure_ascii=False),
                 len(image_paths),
                 status,
+                version.source_lang,
                 None,
                 self.batch_id,
                 self.config.claim_ttl_seconds,
@@ -561,6 +580,7 @@ class MySQLLedger(ConsumptionLedger):
         dataset: str | None = None,
         batch_id: str | None = None,
         lang: str | None = None,
+        source_lang: str | None = None,
         page_size: int = 1000,
     ) -> Iterator[dict[str, Any]]:
         """Stream done samples as ShareGPT records, newest translation wins.
@@ -579,6 +599,12 @@ class MySQLLedger(ConsumptionLedger):
         if lang:
             filters.append("s.lang_assigned = %s")
             params.append(lang)
+        if source_lang:
+            # 源语言和分配语言是两回事：中文原生的集合 lang_assigned 是 'en'
+            # （没被分去翻译），但 source_lang 是 'zh'。想挑「最终是中文的样本」
+            # 得把两边并起来，所以这里给的是独立的过滤条件。
+            filters.append("s.source_lang = %s")
+            params.append(source_lang)
         where = " AND ".join(filters)
         last_id = 0
         while True:

@@ -634,3 +634,85 @@ def test_retry_rejected_can_target_one_dataset(tmp_path, clean_database, mysql_s
 
     assert run_db_retry_rejected(config_path, datasets=["okvqa"])["matched"] == 4
     assert run_db_retry_rejected(config_path, datasets=["not_here"])["matched"] == 0
+
+
+def test_source_lang_is_added_to_a_table_that_predates_the_column(clean_database):
+    """已经建过表的库要能就地补列——用户的库是 db-init 之后才加的这一列。"""
+
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+
+    ledger = MySQLLedger(clean_database)
+    ledger.pool.run(lambda cursor: cursor.execute("ALTER TABLE sample_source DROP COLUMN source_lang"))
+
+    ledger.ensure_schema()  # 幂等，再跑一次应该把列补回来
+
+    def columns(cursor):
+        cursor.execute("SHOW COLUMNS FROM sample_source LIKE 'source_lang'")
+        return cursor.fetchall()
+
+    assert ledger.pool.run(columns)
+    ledger.ensure_schema()  # 补过之后再跑不该报错
+    ledger.close()
+
+
+def test_a_chinese_native_dataset_is_recorded_as_such_and_exports_apart(
+    tmp_path, clean_database, mysql_settings
+):
+    """中文原生的集合不该被当成英文样本。
+
+    它没被分去翻译，所以 lang_assigned 是 'en'；能把它挑出来的只有 source_lang。
+    """
+
+    from finevision_to_sharegpt.db_commands import run_db_export
+
+    data_root = tmp_path / "zips"
+    data_root.mkdir()
+    for name in ("okvqa", "zh_native"):
+        parquet_path = tmp_path / f"{name}.parquet"
+        pq.write_table(
+            pa.table(
+                {
+                    "images": [[b"\xff\xd8\xff" + name.encode() + str(i).encode()] for i in range(3)],
+                    "texts": [[{"user": f"Q{i}", "assistant": f"A{i}"}] for i in range(3)],
+                }
+            ),
+            parquet_path,
+            row_group_size=2,
+        )
+        with zipfile.ZipFile(data_root / f"{name}.zip", "w") as archive:
+            archive.write(parquet_path, arcname="nested/part.parquet")
+
+    registry = tmp_path / "datasets.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "data_root": str(data_root),
+                "datasets": {
+                    "okvqa": {"zip": "okvqa.zip"},
+                    "zh_native": {"zip": "zh_native.zip", "source_lang": "zh"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config, config_path = write_config(
+        tmp_path, registry, mysql_settings, datasets=["okvqa", "zh_native"], chinese_ratio=0.0
+    )
+    run_export_zips(config)
+
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+
+    ledger = MySQLLedger(load_mysql_config(mysql_settings))
+
+    def by_lang(cursor):
+        cursor.execute("SELECT dataset, source_lang, lang_assigned FROM sample_source ORDER BY dataset")
+        return cursor.fetchall()
+
+    rows = ledger.pool.run(by_lang)
+    ledger.close()
+    assert {(row[0], row[1]) for row in rows} == {("okvqa", "en"), ("zh_native", "zh")}
+    # 两个集合都没被分去翻译，光看 lang_assigned 分不出来，这正是加列的理由。
+    assert {row[2] for row in rows} == {"en"}
+
+    exported = run_db_export(config_path, tmp_path / "zh.jsonl", source_lang="zh")
+    assert exported["written"] == 3

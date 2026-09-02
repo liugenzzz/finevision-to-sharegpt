@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-09-02 · sample_source 加 source_lang，区分「源文本是哪国话」和「被分到哪一侧」
+
+**动了**：`db/schema.py`、`db/ledger.py`、`db/mysql_ledger.py`、`db_commands.py`、
+`dataset_registry.py`、`cli.py`，加两条集成用例。**改到了 `zip_pipeline.py` 一行**
+（`open_dataset` 调用点），见下。
+
+**为什么现在做**：`lang_assigned ENUM('zh','en')` 的语义是「这条被分到中文侧还是
+原文侧」，不是「文本实际是什么语言」。中文原生的集合设 `chinese_ratio: 0` 之后会被
+标成 `'en'`——存的是中文，标签是英文，`db-export --lang zh` 直接漏掉它们。
+
+用户要把中文原生的集合并进来，所以得分开记。**赶在全量灌库之前做**：
+`sample_source` 现在是空的，加列不要钱；等 2500 万行进去再 ALTER 就是另一回事。
+
+**加了什么**：
+
+- `sample_source.source_lang VARCHAR(16) NOT NULL DEFAULT 'en'`。没用 ENUM，
+  是为了以后加 `ja`/`multi` 不用改表。每行多约 4 字节，2500 万行约 100 MB。
+- 注册表里按数据集写：`{"zh_native": {"dir": "...", "source_lang": "zh"}}`，
+  不写就是 `en`。值经 `RegisteredDataset` → `DatasetVersion` → `claim` 落库。
+- `db-export --source-lang zh`，和 `--lang` 是**两个独立过滤条件**，别混。
+
+**就地补列**：`ensure_schema` 现在会查 `information_schema` 再决定要不要 ALTER。
+MySQL 没有 `ADD COLUMN IF NOT EXISTS`（那是 MariaDB 的），所以不能照抄。
+用户的库已经 `db-init` 过了，**重跑一次 `db-init` 就会补上这一列**。
+
+**对另一侧的影响**：
+
+1. **`open_dataset` 多了第四个参数 `source_lang`（有默认值 `"en"`）。**
+   我把 `zip_pipeline.py:297` 的调用点改成传 `dataset.source_lang` 了。
+   你要是有别的调用点，不传也不会报错，但那样落库的就永远是 `en`。
+2. **视图要重建。** `v_sample_source_*` 是 `SELECT *`，MySQL 在建视图时就把列固化
+   了，老视图看不到新列。`db-init` 走的是 `CREATE OR REPLACE VIEW`，重跑即可。
+3. `lang_assigned` 的语义和取值**一点没动**，你的翻译分流逻辑不受影响。
+   中文原生集要不要跳过翻译，那是分流的事，归你——我只负责它在库里能被认出来。
+
+---
+
 ## 2026-09-02 · probe_dataset 加 --only-bad/--json；实测出「恢复顺序反了会静默漏行」
 
 **动了**：`scripts/probe_dataset.py`（两个开关 + 按结论分组的汇总）、

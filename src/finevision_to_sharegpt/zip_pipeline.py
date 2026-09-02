@@ -294,7 +294,9 @@ def _iter_dataset_rows(
         _describe_overall(overall, dataset.name, len(datasets))
         dataset_stats = stats_factory()
         limit = request.limit if request.limit is not None else config.limit_per_dataset
-        version = ledger.open_dataset(dataset.name, dataset.source_path, config.images_root)
+        version = ledger.open_dataset(
+            dataset.name, dataset.source_path, config.images_root, dataset.source_lang
+        )
         versions[dataset.name] = version
         for parquet in iter_dataset_parquets(dataset, tmp_root):
             plan = ledger.scan_plan(version, parquet.name, for_ingest=for_ingest)

@@ -18,6 +18,10 @@ class DatasetVersion:
     dataset: str
     version_id: int | None = None
     source_hash: str | None = None
+    # 源文本本身是什么语言。和 lang_assigned 是两回事：后者说的是这条样本被分到
+    # 中文侧还是原文侧，前者说的是 sample_source.conversations 里存的是哪国话。
+    # 中文原生的数据集不需要翻译，但过去只能标成 'en'，查询时分不出来。
+    source_lang: str = "en"
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,9 @@ class ConsumptionLedger(ABC):
     """
 
     @abstractmethod
-    def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion: ...
+    def open_dataset(
+        self, dataset: str, source_path: Path, images_root: Path, source_lang: str = "en"
+    ) -> DatasetVersion: ...
 
     @abstractmethod
     def scan_plan(
@@ -126,8 +132,10 @@ class JsonlLedger(ConsumptionLedger):
     def __init__(self, completed_ids: set[str] | None = None) -> None:
         self.completed_ids: set[str] = completed_ids if completed_ids is not None else set()
 
-    def open_dataset(self, dataset: str, source_path: Path, images_root: Path) -> DatasetVersion:
-        return DatasetVersion(dataset=dataset)
+    def open_dataset(
+        self, dataset: str, source_path: Path, images_root: Path, source_lang: str = "en"
+    ) -> DatasetVersion:
+        return DatasetVersion(dataset=dataset, source_lang=source_lang)
 
     def scan_plan(
         self, version: DatasetVersion, parquet_name: str, for_ingest: bool = False

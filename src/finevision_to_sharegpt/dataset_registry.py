@@ -21,6 +21,9 @@ class RegisteredDataset:
     name: str
     source_path: Path
     kind: str = "zip"
+    # 源文本的语言。中文原生的集合标上 "zh" 就不必翻译，也不会在导出时
+    # 被当成英文样本。注册表里不写就是 "en"，因为 FineVision 全是英文。
+    source_lang: str = "en"
 
     @property
     def zip_path(self) -> Path:
@@ -124,7 +127,12 @@ def _parse_entry(name: str, item: Any, data_root: Path) -> RegisteredDataset:
     source_path = Path(str(item[kind]))
     if not source_path.is_absolute():
         source_path = data_root / source_path
-    return RegisteredDataset(name=name, source_path=source_path, kind=kind)
+    return RegisteredDataset(
+        name=name,
+        source_path=source_path,
+        kind=kind,
+        source_lang=str(item.get("source_lang") or "en"),
+    )
 
 
 def discover_datasets(data_root: Path, options: Any = True) -> dict[str, RegisteredDataset]:

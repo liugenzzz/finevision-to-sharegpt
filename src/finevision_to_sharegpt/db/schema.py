@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS sample_source (
   image_paths      JSON                     DEFAULT NULL,
   image_count      SMALLINT        NOT NULL DEFAULT 0,
   status           ENUM('pending','claimed','done','failed','rejected') NOT NULL DEFAULT 'pending',
+  source_lang      VARCHAR(16)     NOT NULL DEFAULT 'en',
   lang_assigned    ENUM('zh','en')          DEFAULT NULL,
   reject_reason    VARCHAR(255)             DEFAULT NULL,
   batch_id         VARCHAR(64)              DEFAULT NULL,
@@ -81,6 +82,27 @@ CREATE TABLE IF NOT EXISTS dataset_cursor (
 """
 
 _TEMPLATES = (DATASET_VERSION, SAMPLE_SOURCE, SAMPLE_TRANSLATION, DATASET_CURSOR)
+
+# 已经建过表的库不会被 CREATE TABLE IF NOT EXISTS 补上新列，得单独加。
+# MySQL 没有 ADD COLUMN IF NOT EXISTS（那是 MariaDB 的写法），只能先问
+# information_schema 再决定要不要 ALTER。
+_ADDED_COLUMNS = (
+    ("sample_source", "source_lang", "VARCHAR(16) NOT NULL DEFAULT 'en' AFTER status"),
+)
+
+
+def missing_column_query(table: str, column: str) -> tuple[str, tuple[str, str]]:
+    return (
+        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+        (table, column),
+    )
+
+
+def added_columns() -> tuple[tuple[str, str, str], ...]:
+    """Columns introduced after the first release, for in-place upgrades."""
+
+    return _ADDED_COLUMNS
 
 
 def table_statements(collation: str = DEFAULT_COLLATION) -> tuple[str, ...]:

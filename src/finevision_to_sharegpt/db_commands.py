@@ -80,6 +80,7 @@ def run_db_export(
     dataset: str | None = None,
     batch_id: str | None = None,
     lang: str | None = None,
+    source_lang: str | None = None,
 ) -> dict[str, Any]:
     """Write done samples back out as ShareGPT JSONL plus a JSON array."""
 
@@ -90,7 +91,9 @@ def run_db_export(
     ledger = _ledger(config)
     written = 0
     try:
-        for record in ledger.iter_export_records(dataset=dataset, batch_id=batch_id, lang=lang):
+        for record in ledger.iter_export_records(
+            dataset=dataset, batch_id=batch_id, lang=lang, source_lang=source_lang
+        ):
             append_jsonl(output_jsonl, record)
             written += 1
     finally:
@@ -220,7 +223,9 @@ def run_db_restore(
             version = (
                 DatasetVersion(dataset=name)
                 if ledger is None
-                else ledger.open_dataset(name, dataset.source_path, config.images_root)
+                else ledger.open_dataset(
+                    name, dataset.source_path, config.images_root, dataset.source_lang
+                )
             )
             marks: dict[str, int] = {}
             restored = translated = 0
