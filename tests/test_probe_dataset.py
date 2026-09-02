@@ -176,3 +176,38 @@ def test_a_failed_probe_does_not_claim_the_rows_had_no_images(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "一条都没解析出来" in output
     assert "0 张图" not in output
+
+
+def test_dot_directories_are_not_treated_as_collections(tmp_path, capsys):
+    # .cache is what HuggingFace leaves behind. Reporting it as a broken dataset
+    # is noise, and walking it to find that out is wasted on a large tree.
+    write_parquet(tmp_path / "chartqa" / "part-000.parquet", readable_table())
+    cache = tmp_path / ".cache"
+    cache.mkdir()
+    (cache / "x.lock").write_text("", encoding="utf-8")
+
+    assert probe_dataset.main([str(tmp_path), "--all"]) == 0
+
+    captured = capsys.readouterr()
+    assert ".cache" not in captured.out
+    assert "跳过 1 个点开头的目录" in captured.err
+
+
+def test_progress_goes_to_stderr_so_a_redirected_report_stays_clean(tmp_path, capsys):
+    write_parquet(tmp_path / "chartqa" / "part-000.parquet", readable_table())
+
+    probe_dataset.main([str(tmp_path), "--all"])
+
+    captured = capsys.readouterr()
+    assert "[1/1] chartqa" in captured.err
+    assert "[1/1]" not in captured.out
+
+
+def test_a_collection_with_no_parquet_names_what_it_holds_without_listing_everything(tmp_path):
+    for index in range(700):
+        (tmp_path / f"img{index}.png").write_bytes(b"png")
+
+    probe = probe_dataset.probe_dataset(tmp_path)
+
+    assert probe.verdict == "unreadable"
+    assert ".png×" in probe.detail

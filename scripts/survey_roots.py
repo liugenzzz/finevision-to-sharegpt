@@ -55,7 +55,8 @@ def main(argv: list[str] | None = None) -> int:
 
     usable, needs_work = [], []
     for child in sorted(root.iterdir()):
-        if not child.is_dir():
+        # .cache and friends are tooling leftovers, not collections.
+        if not child.is_dir() or child.name.startswith("."):
             continue
         result = survey(child, args.depth)
         kinds = result["kinds"]

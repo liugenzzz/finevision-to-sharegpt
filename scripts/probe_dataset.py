@@ -71,9 +71,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"not a directory: {root}", file=sys.stderr)
         return 1
 
-    targets = [item for item in sorted(root.iterdir()) if item.is_dir()] if args.all else [root]
+    if args.all:
+        children = [item for item in sorted(root.iterdir()) if item.is_dir()]
+        # .cache, .git and friends are tooling leftovers, never collections.
+        # Reporting one as "❌ 读不了" is noise, and walking it to say so is
+        # wasted work on a tree this size.
+        targets = [item for item in children if not item.name.startswith(".")]
+        hidden = len(children) - len(targets)
+        if hidden:
+            print(f"跳过 {hidden} 个点开头的目录（.cache 之类，不是数据集）", file=sys.stderr)
+    else:
+        targets = [root]
+
     results: list[tuple[str, Probe]] = []
-    for target in targets:
+    for index, target in enumerate(targets, 1):
+        # Progress goes to stderr so it stays out of a redirected report, and so
+        # a slow collection reads as slow rather than as a hang.
+        print(f"[{index}/{len(targets)}] {target.name}", file=sys.stderr, flush=True)
         try:
             probe = probe_dataset(target, args.rows)
         except Exception as exc:  # noqa: BLE001 - one bad collection must not stop the survey

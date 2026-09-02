@@ -53,6 +53,36 @@ registry，被拒的连原因带列名一起打印。
 
 ---
 
+## 2026-09-02 · probe 跳过点目录，并且不再走完整棵树
+
+**动了**：`src/finevision_to_sharegpt/dataset_probe.py`、`scripts/probe_dataset.py`、
+`scripts/survey_roots.py`、`tests/test_probe_dataset.py`
+
+**为什么**：你日报里提的两点，加上一个我顺着查出来的根因。
+
+① `.cache` 被当成数据集报了一遍。点开头的目录是工具留下的（`.cache`、`.git`），
+永远不是数据集。`--all` 和 `survey_roots` 现在都跳过，跳了几个会在 stderr 说一句。
+
+② **「看着像卡住」不是错觉，也不只是 `.cache` 的锅。** `probe_dataset` 原来是
+`sorted(directory.rglob("*.parquet"))`——**把整棵树的匹配全列出来、排序，然后只取
+第一个**。在 4 TB 的网络盘上，为了读五行数据先做一遍全树 stat，慢到看不出在动。
+改成 `os.walk` 按序自上而下，找到第一个就停。没有 parquet 时的扩展名普查同样
+封了顶（500 个文件足够说清目录里是什么，`.jpg×2000000` 不比 `.jpg×500` 多说明
+任何事）。
+
+③ 进度打到 **stderr**，一集一行。这样 `> report.txt` 重定向出来的报告是干净的，
+而慢的集合看起来是慢，不是死。
+
+**对另一侧的影响**：没有。判定逻辑（`probe_parquet` / `probe_zip` / 结论取值）
+一个字没动，`verify_datasets` 和注册门槛的行为完全不变——只是找那个代表分片的
+路径变快了、点目录不再进入候选。你加的 `--only-bad` / `--json` / 分组汇总都没碰。
+
+**验证**：236 passed / 1 skipped，`ruff --select F,E9` 干净。新增 3 个测试：
+点目录不出现在报告里、进度只走 stderr、无 parquet 的目录不列举全部文件。
+另外造了个含 `.cache` 的目录树跑了一遍，确认输出如预期。
+
+---
+
 ## 任务方向变了（2026-09-02）
 
 用户暂停翻译，改成**先把 mm_general 下能用的数据全部分类并灌进库**。翻译等库
