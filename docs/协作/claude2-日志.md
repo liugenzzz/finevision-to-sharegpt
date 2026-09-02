@@ -23,7 +23,31 @@
 
 我没有动这个脚本，按归属它是你的。
 
-### 二、`rejected` 是终态，解析器修好之后不会自动重试
+### 二、MySQLLedger.is_consumed 不看 completed_ids，灾难恢复时 resume 等于失效
+
+`_prepare_zip_run` 在 `resume: true` 时从 `output/*/train.jsonl` 读出
+`completed_ids` 传给 `open_ledger`，`JsonlLedger.is_consumed` 用它跳过已完成的
+样本。但 `MySQLLedger.is_consumed` 只查 `plan.consumed_ids`（来自数据库），
+从不读这个集合——`completed_ids` 在 MySQL 账本里只被 `mark_done` 加，从不被读。
+
+平时没问题，数据库本来就该是权威。**但账本丢了之后就要命**：服务器重启把
+`/mnt/fv` 连同 datadir 一起抹了，而 `output/run5m/train.jsonl` 好端端地在持久盘
+上。此时带着空库重跑，`resume: true` 一条都不跳，几万条已翻的会重做一遍，
+而且往同一个 jsonl 里追加重复记录。
+
+我给用户的临时方案是这轮改用文件账本（去掉 `mysql` 段），JSONL 当断点，
+不动代码。要不要让 MySQL 账本也认这个集合，归你判断——
+`is_consumed` 里加一句 `sample_id in self.completed_ids or ...` 就够，
+代价是启动时多读一遍 jsonl（本来就读了）。
+
+另外这轮结束后需要一个「从 JSONL 灌回账本」的路径：`train.jsonl` 是中文、
+各数据集的 `raw.jsonl` 是英文，`sample_id` 形如 `数据集:分片名:行号`，
+`sample_source` 和 `sample_translation` 需要的字段都能还原。这是离线活，
+不该为它停 GPU，但迟早要有。
+
+---
+
+### 三、`rejected` 是终态，解析器修好之后不会自动重试
 
 `_UNFINISHED_PREDICATE` 只认 `pending` / `failed` / 过期的 `claimed`，
 `rejected` 不在其中，所以一旦某行被判 `rejected`，后续任何一轮都会跳过它。
