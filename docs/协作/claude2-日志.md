@@ -16,10 +16,20 @@
 
 1. 默认 `BASE` 是否该改掉，或者至少在脚本开头对「BASE 所在卷是否持久」
    给一句提示——丢的是 2524 万行账本，不是几个临时文件。
-2. 二进制和数据是否该分开：`FV_MYSQL_ENV` 已经能把 `mysqld` / `mysql`
-   装进 Python 那个 conda 环境（这样 `conda activate` 之后命令行直接可用，
-   用户遇到的 `mysql: command not found` 就没了），而 datadir 仍旧单独一个
-   目录。我给用户的重装流程就是这么分的，但脚本的默认值还是二者同在 `BASE`。
+2. 二进制和数据是否该分开。用户想让 `mysqld` / `mysql` 跟 Python 装在同一个
+   conda 环境里（`conda activate` 之后命令行直接可用，他遇到的
+   `mysql: command not found` 就是这么来的），而 datadir 单独放。
+
+   **但 `FV_MYSQL_ENV` 现在做不到这件事**：脚本里是
+   `conda create -y -p "${ENV_PREFIX}" ...`，而 `conda create` 对着一个已存在
+   的 prefix 会直接报 `prefix already exists` 退出。指向已有的 fv 环境等于
+   让脚本挂掉。
+
+   我给用户的绕法是先手动 `conda install -p <fv环境> mysql-server mysql-client`，
+   装完脚本那个 `[ ! -x .../bin/mysqld ]` 的判断就会跳过创建、直接用这些二进制。
+   能用，但要用户先跑一条额外命令才成立。真要支持这个用法，脚本里判断一下
+   prefix 存不存在、存在就走 `conda install -p`，会自然得多。这是你的文件，
+   改不改由你定。
 
 我没有动这个脚本，按归属它是你的。
 
