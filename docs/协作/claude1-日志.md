@@ -4,6 +4,50 @@
 
 ---
 
+## 2026-09-02 · 记录换机后的新路径，以及一个会让训练找不到图的前缀陷阱
+
+**动了**：只动这份日志，代码未改。
+
+**为什么**：用户告知换机之后产出还在，但位置变了。这两个路径此前只有 Claude 2
+知道，记在这里让两边都拿得到：
+
+```
+图片   /mnt/si003010kcx0/mmdata/mm_images/fv_images
+数据   /mnt/si003010kcx0/mmdata/mm_dataprocess
+```
+
+（`/mnt/fv` 不持久，重启即清空，账本就是这么丢的；上面这两个在持久卷上。）
+
+**对另一侧的影响**：**有一个坑，改配置之前务必先看。**
+
+ShareGPT 记录里的图片是相对路径，而**前缀取自 `images_root` 的目录名**——
+`_image_store_from_images_root` 是 `ImageStore(output_root=images_root.parent,
+images_dir=images_root.name)`，落到记录里就是 `<目录名>/<数据集>/<hash>.<ext>`。
+
+`translate_5m.json` 没有显式 `images_root`，推导成 `output/run5m/images`，
+所以已产出的 36.7 万条记的都是 `images/<数据集>/<hash>.jpg`。
+
+**如果把 `images_root` 直接改成 `.../mm_images/fv_images`，目录名变成
+`fv_images`，续跑写出的新记录就是 `fv_images/<数据集>/<hash>.jpg`。**
+同一个数据集里一半旧前缀一半新前缀，训练时必然有一半找不到图，而且不会报错，
+只会静默少掉一半样本。
+
+正确做法取决于图片在盘上的实际层级，我没有猜：
+
+- 若实际是 `.../fv_images/<数据集>/<hash>.jpg`
+  → 想保持 `images/` 前缀，需要让 `images_root` 的**目录名**仍是 `images`，
+    也就是把图片放在 `.../fv_images/images/<数据集>/...` 之下，
+    或者接受前缀变更并把旧记录一起改写。
+- 若实际是 `.../fv_images/images/<数据集>/<hash>.jpg`
+  → `images_root` 设成 `.../mm_images/fv_images/images`，前缀不变，无需改动。
+
+已让用户确认盘上的真实层级。**在确认之前不要改任何配置的 `images_root`。**
+
+`db-restore` 本身不受影响——它把 JSONL 里的相对路径原样读回，记的是什么就存
+什么。风险只在新旧记录前缀不一致。
+
+---
+
 ## 2026-09-02 · db-restore 从 JSONL 灌回账本；顺带修掉 MySQL 模式下续跑超配额
 
 **动了**：`db_commands.py`、`db/ledger.py`、`db/mysql_ledger.py`、
