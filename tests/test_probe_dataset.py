@@ -123,8 +123,43 @@ def test_all_probes_every_subdirectory_and_survives_a_broken_one(tmp_path, capsy
     assert probe_dataset.main([str(tmp_path), "--all"]) == 0
 
     output = capsys.readouterr().out
-    assert "可注册 1 / 2: good" in output
+    assert "共 2 个，可注册 1 个" in output
     assert "打开失败" in output
+
+
+def test_only_bad_hides_the_usable_ones_but_still_counts_them(tmp_path, capsys):
+    """一百多个集合里要处理的只有不 ok 的，但汇总得照样算上全部。"""
+
+    write_parquet(tmp_path / "good" / "part-000.parquet", readable_table())
+    (tmp_path / "broken").mkdir()
+    (tmp_path / "broken" / "part-000.parquet").write_bytes(b"not parquet at all")
+
+    assert probe_dataset.main([str(tmp_path), "--all", "--only-bad"]) == 0
+
+    output = capsys.readouterr().out
+    assert "打开失败" in output
+    assert "共 2 个，可注册 1 个" in output
+    # 可注册的那个不该出现在逐条列表里，只出现在按结论分组的汇总里。
+    assert output.count("good") == 1
+
+
+def test_json_output_carries_the_reason_for_each_dataset(tmp_path, capsys):
+    """结论要能被别的脚本读，不能只有给人看的那份。"""
+
+    import json
+
+    write_parquet(tmp_path / "good" / "part-000.parquet", readable_table())
+    (tmp_path / "broken").mkdir()
+    (tmp_path / "broken" / "part-000.parquet").write_bytes(b"not parquet at all")
+    target = tmp_path / "verdicts.json"
+
+    assert probe_dataset.main([str(tmp_path), "--all", "--json", str(target)]) == 0
+
+    payload = {item["dataset"]: item for item in json.loads(target.read_text(encoding="utf-8"))}
+    assert payload["good"]["verdict"] == "ok"
+    assert payload["broken"]["verdict"] == "unreadable"
+    assert "打开失败" in payload["broken"]["detail"]
+    assert payload["good"]["advice"]
 
 
 def test_a_missing_path_is_an_error(tmp_path, capsys):

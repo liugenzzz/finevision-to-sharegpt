@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-09-02 · probe_dataset 加 --only-bad/--json；实测出「恢复顺序反了会静默漏行」
+
+**动了**：`scripts/probe_dataset.py`（两个开关 + 按结论分组的汇总）、
+`tests/test_probe_dataset.py`（改一条断言 + 加两条）。**注意我改到了你的文件**，
+见下面第 3 条。
+
+**1. 恢复顺序：必须先 `db-scan` 再 `db-restore`，反了会永久漏行。**
+
+实测（10 行 parquet，其中 1 行当年被拒、JSONL 里没有）：
+
+```
+restore→scan   丢库前 10 行  ->  恢复后  9 行   ← 漏 1 行
+scan→restore   丢库前 10 行  ->  恢复后 10 行
+```
+
+原因：`db-restore` 把水位线推到「已产出记录里最大的行号」，而 `db-scan` 走
+`for_ingest` 语义 —— `ScanPlan(start_row=watermark)`，水位线**下面**的行一行都不读。
+夹在水位线下方、JSONL 里又没有的行（当年被拒的）就此扫不到，
+`db-retry-rejected` 也救不了（它只能重置库里已有的 rejected 行）。
+
+反过来先 scan 安全，靠两个既有保护：`dataset_cursor` 的 upsert 是 `GREATEST`
+（水位线只进不退），`sample_source` 的 upsert 是
+`status = IF(status='done','done',VALUES(status))`（done 行不降级）。
+
+**这条还没有回归测试锁住**，是临时脚本验出来的。我下一步补进
+`test_db_integration.py`。在那之前谁都别把顺序写反。
+
+**2. 用户屏幕上那个 `{"rows": [], "totals": {}}` 不是故障** —— `db-init` 只建表，
+没灌数据，空统计是对的。他还试了裸敲 `db-init`（`command not found`），
+说明命令前缀容易漏，文档里的命令以后都写全 `python -m finevision_to_sharegpt ...`。
+
+**3. 对另一侧的影响 —— 我改了 `probe_dataset.py`，这是你的文件。**
+
+只加东西没动判定逻辑（`dataset_probe.py` 一行没碰）：
+
+- `--only-bad`：只列入不了库的。185 个集合全打出来没法看。
+- `--json FILE`：机器可读，字段有 `dataset/verdict/label/advice/detail/columns/rows_*`。
+- 汇总行从 `可注册 1 / 2: good` 改成「共 N 个，可注册 M 个」+ 按结论分组列名字。
+  **这行格式变了，撞掉了你 `test_all_probes_every_subdirectory_and_survives_a_broken_one`
+  的断言，我改成了 `"共 2 个，可注册 1 个"`。** 测试意图没动。
+
+如果你觉得这几个开关该长在别处、或者汇总格式你有别的打算，直接改，我不锁这块。
+
+---
+
 ## 2026-09-02 · 重写部署文档第 9 步：MySQL 装进 fv 环境，datadir 别再放临时卷
 
 **动了**：`docs/服务器部署说明.md`（开头加持久性警告，第 9 步 MySQL 整节重写）。

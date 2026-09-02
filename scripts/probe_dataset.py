@@ -15,12 +15,15 @@ they agree.
 
     python scripts/probe_dataset.py /mnt/.../mm_general/OmniScience
     python scripts/probe_dataset.py /mnt/.../mm_general --all
+    python scripts/probe_dataset.py /mnt/.../mm_general --all --only-bad --json bad.json
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -58,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("path", help="one collection directory, or a root of them with --all")
     parser.add_argument("--all", action="store_true", help="probe every subdirectory of path")
     parser.add_argument("--rows", type=int, default=5, help="how many rows to parse per collection")
+    # 一百多个集合全打出来没人看得完，而真正要处理的只有不 ok 的那些。
+    parser.add_argument("--only-bad", action="store_true", help="只列入不了库的，跳过可注册的")
+    parser.add_argument("--json", metavar="FILE", help="同时写一份机器可读的结果，- 表示标准输出")
     args = parser.parse_args(argv)
 
     root = Path(args.path)
@@ -73,10 +79,39 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 - one bad collection must not stop the survey
             probe = Probe("unreadable", detail=f"打开失败: {exc}")
         results.append((target.name, probe))
-        report(target.name, probe)
+        if not (args.only_bad and probe.verdict == "ok"):
+            report(target.name, probe)
 
     registrable = [name for name, probe in results if probe.verdict == "ok"]
-    print(f"\n可注册 {len(registrable)} / {len(results)}: {', '.join(registrable) or '(无)'}")
+    counts = Counter(probe.verdict for _name, probe in results)
+    print(f"\n共 {len(results)} 个，可注册 {len(registrable)} 个。按结论分组：")
+    for verdict, count in counts.most_common():
+        names = [name for name, probe in results if probe.verdict == verdict]
+        shown = ", ".join(names[:6]) + (f" …(+{len(names) - 6})" if len(names) > 6 else "")
+        print(f"  {VERDICTS[verdict][0]}  {count:>4}   {shown}")
+
+    if args.json:
+        payload = [
+            {
+                "dataset": name,
+                "verdict": probe.verdict,
+                "label": probe.label,
+                "advice": probe.advice,
+                "detail": probe.detail,
+                "source": probe.source,
+                "columns": probe.columns,
+                "rows_seen": probe.rows_seen,
+                "rows_ok": probe.rows_ok,
+                "images": probe.images,
+            }
+            for name, probe in results
+        ]
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        if args.json == "-":
+            print(text)
+        else:
+            Path(args.json).write_text(text, encoding="utf-8")
+            print(f"\n已写出 {args.json}")
     return 0
 
 
