@@ -565,3 +565,72 @@ def test_raising_the_quota_lets_a_resume_continue(tmp_path, clean_database, mysq
 
     assert second["written"] == 3
     assert second["skipped"] == 5
+
+
+def test_retry_rejected_puts_rows_back_and_rescans_them(tmp_path, clean_database, mysql_settings):
+    """解析器改好之后，被拒的行要能重新走一遍；起点应自动回退，不必碰水位线。"""
+
+    from finevision_to_sharegpt.db_commands import run_db_retry_rejected
+
+    registry = make_zip_dataset(tmp_path, rows=6)
+    config, config_path = write_config(tmp_path, registry, mysql_settings)
+    run_export_zips(config)
+
+    # 假装当初有两行被解析器拒了。
+    _execute(
+        mysql_settings,
+        "UPDATE sample_source SET status='rejected', reject_reason='missing_text', done_at=NULL "
+        "WHERE row_index IN (1, 3)",
+    )
+    assert run_db_status(config_path)["totals"] == {"done": 4, "rejected": 2}
+
+    preview = run_db_retry_rejected(config_path, reasons=["missing_text"])
+    assert preview["matched"] == 2
+    assert preview["dry_run"] is True
+    # 预览不能改动任何东西。
+    assert run_db_status(config_path)["totals"] == {"done": 4, "rejected": 2}
+
+    applied = run_db_retry_rejected(config_path, reasons=["missing_text"], dry_run=False)
+    assert applied["reset"] == 2
+    assert run_db_status(config_path)["totals"] == {"done": 4, "pending": 2}
+
+    # 起点必须自己退回去把这两行重新读一遍。
+    again = run_export_zips(config)
+    assert again["written"] == 2
+    assert run_db_status(config_path)["totals"] == {"done": 6}
+
+
+def test_retry_rejected_refuses_to_reset_everything_by_accident(
+    tmp_path, clean_database, mysql_settings
+):
+    """不圈范围就重置全部被拒的行，会把本来就该拒的纯文本集也放回来。"""
+
+    from finevision_to_sharegpt.db_commands import run_db_retry_rejected
+
+    registry = make_zip_dataset(tmp_path, rows=4)
+    config, config_path = write_config(tmp_path, registry, mysql_settings)
+    run_export_zips(config)
+
+    # 不圈范围的预览是放行的：那正是「有哪些原因、各多少行」的查看入口。
+    assert run_db_retry_rejected(config_path)["dry_run"] is True
+
+    # 但不圈范围就直接写库不行，报错里得说清楚怎么圈。
+    with pytest.raises(ValueError, match="必须说清楚"):
+        run_db_retry_rejected(config_path, dry_run=False)
+
+    # 明确要求全量时才放行。
+    assert run_db_retry_rejected(config_path, apply_all=True, dry_run=False)["reset"] >= 0
+
+
+def test_retry_rejected_can_target_one_dataset(tmp_path, clean_database, mysql_settings):
+    """按数据集圈定：解析器只修好了某几个集合时不该动到别的。"""
+
+    from finevision_to_sharegpt.db_commands import run_db_retry_rejected
+
+    registry = make_zip_dataset(tmp_path, rows=4)
+    config, config_path = write_config(tmp_path, registry, mysql_settings)
+    run_export_zips(config)
+    _execute(mysql_settings, "UPDATE sample_source SET status='rejected', reject_reason='missing_image'")
+
+    assert run_db_retry_rejected(config_path, datasets=["okvqa"])["matched"] == 4
+    assert run_db_retry_rejected(config_path, datasets=["not_here"])["matched"] == 0

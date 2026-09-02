@@ -18,6 +18,7 @@ from .db_commands import (
     run_db_export,
     run_db_init,
     run_db_restore,
+    run_db_retry_rejected,
     run_db_status,
     run_db_storage,
     run_list_datasets,
@@ -113,6 +114,15 @@ def build_parser() -> argparse.ArgumentParser:
     db_restore.add_argument("--config", required=True)
     db_restore.add_argument("--output-dir", help="产出目录，默认取配置里 output_jsonl 的上级")
     db_restore.add_argument("--dry-run", action="store_true", help="只统计，不写库")
+
+    db_retry = subparsers.add_parser(
+        "db-retry-rejected", help="把被拒的行放回 pending，让改好的解析器重新看一遍"
+    )
+    db_retry.add_argument("--config", required=True)
+    db_retry.add_argument("--dataset", help="逗号分隔的数据集名")
+    db_retry.add_argument("--reason", help="逗号分隔的拒绝原因，如 missing_text")
+    db_retry.add_argument("--all", dest="apply_all", action="store_true", help="不加过滤，重置全部被拒的行")
+    db_retry.add_argument("--apply", action="store_true", help="真正执行；默认只预览")
     return parser
 
 
@@ -176,6 +186,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "db-storage":
         print(json.dumps(run_db_storage(args.config), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "db-retry-rejected":
+        def _split(value):
+            return [item.strip() for item in value.split(",") if item.strip()] if value else None
+
+        stats = run_db_retry_rejected(
+            args.config,
+            datasets=_split(args.dataset),
+            reasons=_split(args.reason),
+            apply_all=args.apply_all,
+            dry_run=not args.apply,
+        )
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
         return 0
     if args.command == "db-restore":
         stats = run_db_restore(args.config, args.output_dir, dry_run=args.dry_run)

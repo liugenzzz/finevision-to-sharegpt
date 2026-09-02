@@ -80,6 +80,20 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW()
 """
 
+def _rejected_filter(
+    datasets: list[str] | None, reasons: list[str] | None
+) -> tuple[str, tuple[Any, ...]]:
+    clauses = ["status = 'rejected'"]
+    params: list[Any] = []
+    if datasets:
+        clauses.append("dataset IN (" + ",".join(["%s"] * len(datasets)) + ")")
+        params.extend(datasets)
+    if reasons:
+        clauses.append("reject_reason IN (" + ",".join(["%s"] * len(reasons)) + ")")
+        params.extend(reasons)
+    return " AND ".join(clauses), tuple(params)
+
+
 def _count_done_before(cursor: Any, version_id: int, parquet_name: str, row_index: int) -> int:
     """起点之下已产出的行数。
 
@@ -499,6 +513,48 @@ class MySQLLedger(ConsumptionLedger):
             return report
 
         return self.pool.run(query)
+
+    def rejected_breakdown(
+        self, datasets: list[str] | None = None, reasons: list[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """按数据集和拒绝原因分组统计，用来决定放哪些行回去重试。"""
+
+        where, params = _rejected_filter(datasets, reasons)
+
+        def query(cursor: Any) -> list[dict[str, Any]]:
+            cursor.execute(
+                "SELECT dataset, COALESCE(reject_reason, '(无)'), COUNT(*) "
+                f"FROM sample_source WHERE {where} "
+                "GROUP BY dataset, reject_reason ORDER BY COUNT(*) DESC",
+                params,
+            )
+            return [
+                {"dataset": row[0], "reason": row[1], "count": int(row[2])}
+                for row in cursor.fetchall()
+            ]
+
+        return self.pool.run(query)
+
+    def retry_rejected(
+        self, datasets: list[str] | None = None, reasons: list[str] | None = None
+    ) -> int:
+        """把被拒的行放回 pending，让改好的解析器重新看一遍。
+
+        不必动 dataset_cursor：`pending` 属于未完成状态，扫描起点会自动回退到
+        最早的未完成行，水位线之上的部分照旧跳过。
+        """
+
+        where, params = _rejected_filter(datasets, reasons)
+
+        def update(cursor: Any) -> int:
+            cursor.execute(
+                "UPDATE sample_source SET status = 'pending', reject_reason = NULL "
+                f"WHERE {where}",
+                params,
+            )
+            return int(cursor.rowcount or 0)
+
+        return self.pool.run(update)
 
     def iter_export_records(
         self,

@@ -274,3 +274,49 @@ def run_db_restore(
             ledger.close()
     totals["dry_run"] = dry_run
     return totals
+
+
+def run_db_retry_rejected(
+    config_path: Path | str,
+    datasets: list[str] | None = None,
+    reasons: list[str] | None = None,
+    apply_all: bool = False,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """把被拒的行放回 pending，让改好的解析器重新看一遍。
+
+    `rejected` 是终态：解析器改好之后，已经被拒的行不会自动重来。而拒绝分两种，
+    混在一起处理会出事——解析器缺陷造成的该重试，纯文本数据集没有图片字节造成的
+    不该重试，放回去只会让此后每一轮都白读它们一遍。
+
+    所以写入时要求给出数据集或原因来圈定范围；真要全量重置得显式 `apply_all`。
+    不圈范围的预览是放行的——那正是拿来看「有哪些原因、各多少行」的入口。
+    """
+
+    from .db.mysql_ledger import MySQLLedger
+
+    config = load_zip_task_config(config_path)
+    if not dry_run and not datasets and not reasons and not apply_all:
+        raise ValueError(
+            "要重试哪些行必须说清楚：给 --dataset 或 --reason 圈定范围。\n"
+            "  想看有哪些可选，去掉 --apply 跑一次，会按原因列出各有多少行。\n"
+            "  确实要重置全部被拒的行，加 --all——但先确认里面没有纯文本数据集，\n"
+            "  它们的拒绝是对的，放回去每一轮都会白读一遍。"
+        )
+
+    ledger = MySQLLedger(_require_mysql(config), batch_id=config.batch_id)
+    try:
+        before = ledger.rejected_breakdown(datasets, reasons)
+        affected = sum(row["count"] for row in before)
+        result: dict[str, Any] = {
+            "matched": affected,
+            "groups": before,
+            "dry_run": dry_run,
+        }
+        if dry_run:
+            result["note"] = "只是预览，没有改动任何行。确认无误后加 --apply。"
+            return result
+        result["reset"] = ledger.retry_rejected(datasets, reasons)
+    finally:
+        ledger.close()
+    return result

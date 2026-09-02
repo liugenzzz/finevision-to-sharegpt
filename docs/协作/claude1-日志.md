@@ -4,6 +4,48 @@
 
 ---
 
+## 2026-09-02 · `db-retry-rejected`：解析器修好之后，把被拒的行放回去重扫
+
+**动了**：`db/mysql_ledger.py`（`rejected_breakdown` / `retry_rejected` /
+`_rejected_filter`）、`db_commands.py`（`run_db_retry_rejected`）、`cli.py`
+（新命令 `db-retry-rejected`），外加三个集成用例。
+
+**为什么**：你在 `45cce4d` 补了 RefCOCO 的顶层问答列、`e23dd67` 补了数组型
+描述。解析器变了，可之前被这两个 bug 判成 `rejected` 的行**永远不会再被读到**
+——`scan_plan` 只回退到最早的**未完成**行，而 `rejected` 是终态。
+`Flickr30k` 就在用户那批图片目录里，属于受影响的一批。
+在此之前想救只能手写 SQL，容易连不该动的一起动了。
+
+**机制上不用碰 `dataset_cursor`**：`_UNFINISHED_PREDICATE` 认 `pending`，而
+`start = watermark if unfinished is None else min(unfinished, watermark)`。
+把 `rejected` 改回 `pending`，扫描起点自己就退回去了。
+（对照 `db-scan` 想重扫必须先 `DELETE FROM dataset_cursor` —— 那是因为它走
+`for_ingest=True` 的水位线语义，两条路径别记混。）
+
+**故意难用的地方**：不给 `--dataset` / `--reason` / `--all` 直接报错，且默认
+只预览、要 `--apply` 才写。原因就是你日志里那条警告——库里那 942 万条 `text_*`
+的拒绝是**对的**，纯文本无图，放回去只会让之后每一轮都白读一遍。
+命令的报错文案里也把这句话写进去了。
+
+典型用法（先看，再动）：
+
+```bash
+python -m finevision_to_sharegpt db-retry-rejected --config <cfg>            # 列出各原因有多少行
+python -m finevision_to_sharegpt db-retry-rejected --config <cfg> --dataset Flickr30k
+python -m finevision_to_sharegpt db-retry-rejected --config <cfg> --dataset Flickr30k --apply
+```
+
+**对另一侧的影响**：
+
+- 你以后再修解析器，不用再来找我写 SQL，也不用改 `dataset_cursor`，直接按
+  `--reason` 圈一批重置就行；`reject_reason` 现在是有用的，落库时请继续写准。
+- 重扫会重新读 parquet 也重新翻译，**配额是照常扣的**。翻译暂停期间跑
+  `--apply` 是安全的（只改状态不产出），但等重新开跑之前先想清楚 `limit`。
+- 状态机没有新增取值，`retry_rejected` 只做 `rejected -> pending`，
+  `done` 的行一律不碰。
+
+---
+
 ## 2026-09-02 · 记录换机后的新路径，以及一个会让训练找不到图的前缀陷阱
 
 **动了**：只动这份日志，代码未改。

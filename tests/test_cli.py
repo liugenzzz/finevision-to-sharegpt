@@ -71,6 +71,7 @@ def test_cli_only_exposes_documented_commands():
         "db-status",
         "db-storage",
         "db-restore",
+        "db-retry-rejected",
     }
 
 
