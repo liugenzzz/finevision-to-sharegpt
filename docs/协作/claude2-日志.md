@@ -4,6 +4,55 @@
 
 ---
 
+## 2026-09-02 · 注册门槛提到「解析器读得动」，注册 = 能入库 = 能用
+
+**动了**：`src/finevision_to_sharegpt/dataset_probe.py`（新建）、
+`dataset_registry.py`、`scripts/probe_dataset.py`、`scripts/register_datasets.py`、
+`tests/test_dataset_probe.py`（新建）、`README.md`
+
+**为什么**：用户要「能注册就能进数据库」。原来 `discover_datasets` 只检查
+「目录里有没有 `.parquet`」，纯文本数据集轻松通过，然后在账本里填满 `rejected`
+行——每次扫描白读一遍，而且 `rejected` 是终态，之后修好解析器也不会重试。
+库里那 942 万条 `text_*` 就是这么来的。
+
+现在注册前逐个打开数据、用入库时那个 `parse_row` 跑几行，只有 ✅ 才写进
+registry，被拒的连原因带列名一起打印。
+
+**关键的实现选择**：判断逻辑从 `scripts/probe_dataset.py` 挪进了包里的
+`dataset_probe.py`，脚本变成薄壳。**注册和入库必须共用同一份判断代码**——
+两份实现迟早会漂移，而「一致」正是这次改动的全部意义。
+
+**性能上的取舍**：`auto_discover` **默认不验证**。它在每条命令启动时都跑，
+191 个数据集各开一个分片太贵。验证是 `register_datasets.py` 的默认行为
+（付一次代价、把结果固化下来），`auto_discover` 要的话显式写
+`{"verify": true}`，`--no-verify` 可以关掉脚本的验证。
+
+**对另一侧的影响**：**有，而且正是你要的那件事。**
+
+① **你不需要改数据库代码来实现「能注册就能进库」了。** 数据库侧本来就没拦过
+谁——`db-scan` 对任何一行都会写进 `sample_source`，只是解析不了的标 `rejected`。
+门槛在注册这一层，现在提上来了。
+
+② **用户要的「数据筛选、不能入库的给出原因」已经有了**，不用另写：
+`python scripts/register_datasets.py <root> --dry-run` 直接列出能注册的和
+不能注册的（含原因、列名、怎么处理）。想单看某个集合用
+`scripts/probe_dataset.py`。两者走的是同一份 `dataset_probe`。
+
+③ 如果你要在数据库侧复用这个判断，**从 `finevision_to_sharegpt.dataset_probe`
+导入 `probe_dataset` / `verify_datasets`**，别照抄一份到 `db/` 下面。
+
+**验证**：231 passed / 1 skipped，`ruff check --select F,E9` 干净。
+新增 7 个测试覆盖：纯文本集被剔除、坏 parquet 不抛异常只记原因、
+每个被拒的都带 reason、verify 与 include/exclude 组合、zip 里的 parquet 也验。
+另外拿三个人造数据集（可用 / 缺图 / 缺文本）跑了一遍 `register_datasets.py --dry-run`，
+输出确认只写入可用的那个。
+
+**待办**：`configs/datasets.json` 现在还是 `auto_discover: true`（不验证）。
+等 MySQL 装好、mm_general 那边 probe 完，应该改成固化的显式注册表——
+那才是「注册即可用」真正落到配置里的形态。
+
+---
+
 ## 任务方向变了（2026-09-02）
 
 用户暂停翻译，改成**先把 mm_general 下能用的数据全部分类并灌进库**。翻译等库

@@ -104,6 +104,11 @@ def describe_empty_discovery(data_root: Path, options: Any) -> str:
         message.append(f"  include/exclude filtered everything out; subdirectories are: {names}")
         return "\n".join(message)
     names = ", ".join(item.name for item in children[:20])
+    if isinstance(options, dict) and options.get("verify"):
+        message.append("  verify is on, so a subdirectory only counts if the parser can read a row")
+        message.append("  run scripts/probe_dataset.py <data_root> --all to see why each one failed")
+        message.append(f"  subdirectories: {names}")
+        return "\n".join(message)
     message.append("  its subdirectories hold no .parquet files")
     message.append(f"  subdirectories: {names}")
     message.append("  if the parquet sits one level deeper, point data_root at that level")
@@ -128,14 +133,24 @@ def discover_datasets(data_root: Path, options: Any = True) -> dict[str, Registe
     A FineVision checkout is one directory per dataset, hundreds of them, so
     listing each by hand is impractical. ``exclude`` drops names by exact
     match; ``include`` restricts to the named ones.
+
+    ``verify`` raises the bar from "holds a parquet file" to "the parser can
+    actually read a row". Holding parquet is a weak test: a text-only set passes
+    it and then contributes nothing but rejected rows, which cost a full read on
+    every scan and can never be retried because ``rejected`` is terminal. It
+    opens one shard per dataset, so it is opt-in rather than the default — the
+    place that wants it is ``register_datasets.py``, which pays the cost once and
+    pins the result.
     """
 
     exclude: set[str] = set()
     include: set[str] | None = None
+    verify = False
     if isinstance(options, dict):
         exclude = {str(item) for item in options.get("exclude") or ()}
         raw_include = options.get("include")
         include = {str(item) for item in raw_include} if raw_include else None
+        verify = bool(options.get("verify"))
 
     discovered: dict[str, RegisteredDataset] = {}
     if not data_root.is_dir():
@@ -149,6 +164,12 @@ def discover_datasets(data_root: Path, options: Any = True) -> dict[str, Registe
         if next(child.rglob(PARQUET_GLOB), None) is None:
             continue
         discovered[name] = RegisteredDataset(name=name, source_path=child, kind="dir")
+    if verify:
+        # Imported here so the common path does not pay for pyarrow and the
+        # parser just to resolve a registry.
+        from .dataset_probe import verify_datasets
+
+        discovered, _dropped = verify_datasets(discovered)
     return discovered
 
 

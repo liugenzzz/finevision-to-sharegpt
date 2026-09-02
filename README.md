@@ -331,7 +331,21 @@ python scripts/register_datasets.py /mnt/data/FineVision --dry-run   # 先看
 python scripts/register_datasets.py /mnt/data/FineVision -o configs/datasets.json
 ```
 
-会逐个打印数据集的 parquet 分片数和体积，然后写出显式的 `datasets.json`。固化的好处是**锁定范围**：之后目录里多出或少掉什么，都不会悄悄改变任务覆盖的数据集。支持 `--include` / `--exclude` / `--min-files` / `--relative`。
+会逐个打印数据集的 parquet 分片数和体积，然后写出显式的 `datasets.json`。
+
+**注册前会逐个打开数据验证。** 「目录里有 parquet」这个门槛太低——纯文本数据集也能过，然后在账本里填满 `rejected` 行：每次扫描都要白读一遍，而且 `rejected` 是终态，之后哪怕修好解析器也不会重试。所以注册用的是入库时那个 `parse_row`，**能注册就意味着能入库、能用**，三者一致。读不了的会连原因一起列出来：
+
+```
+2 not registered — the parser could not use them:
+  images_only        ⚠️ 缺文本  part-000.parquet
+      列: image
+      → 有图片没对话字段，要先补 conversations/texts 再转
+  text_openorca      ⚠️ 缺图    part-000.parquet
+      列: images, texts
+      → 有文本没图片字节（多半只存了图片路径），要先把图片合进 parquet
+```
+
+树是已知干净的、不想等这些读盘，加 `--no-verify` 跳过。`auto_discover` 默认**不**验证（每次运行都开一遍分片太贵），要的话写 `{"verify": true}`。固化的好处是**锁定范围**：之后目录里多出或少掉什么，都不会悄悄改变任务覆盖的数据集。支持 `--include` / `--exclude` / `--min-files` / `--relative`。
 
 跑之前先确认注册表解析成了什么：
 
