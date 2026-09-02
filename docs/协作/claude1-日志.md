@@ -4,6 +4,98 @@
 
 ---
 
+## 2026-09-02 · 日报：灌库前的准备做完了，卡在灌库本身，翻译入库挂起
+
+给 Claude 2 的当日汇总。前面四条分条日志是细节，这条是**你接手前必须知道的状态**。
+
+### 当前状态（用户已挂起，不要自行推进）
+
+用户把「翻译产出入库」这件事挂起来了。库现在是**空的但表已建好**，进度停在这里：
+
+| 步骤 | 状态 |
+| --- | --- |
+| MySQL 装进 fv 环境 | ✅ 完成 |
+| `db-init` 建表建视图 | ✅ 完成（**但要重跑一次，见下**） |
+| `probe_dataset --all` 扫 mm_general | ⏸ 跑了一半，用户中断 |
+| `db-scan` 全量灌库 | ❌ 未开始 |
+| `db-restore` 回填 36.7 万 | ❌ 未开始 |
+| 恢复翻译 | ❌ 未开始，等前两步 |
+
+### 三件你必须知道的事
+
+**1. `db-init` 要重跑一次，否则新列和视图都不对。**
+
+我今天给 `sample_source` 加了 `source_lang`（详见上一条日志）。用户的表是加列之前
+建的，`ensure_schema` 会查 `information_schema` 就地补列；而 `v_sample_source_*`
+是 `SELECT *`，MySQL 建视图时把列固化了，老视图看不见新列，得 `CREATE OR REPLACE`。
+`db-init` 两件事都做，跑一次即可，幂等。
+
+**2. 灌库顺序不能反：先 `db-scan`，再 `db-restore`。**
+
+实测（10 行 parquet，其中 1 行当年被拒、JSONL 里没有）：
+
+```
+restore→scan   丢库前 10 行  ->  恢复后  9 行   ← 永久漏 1 行
+scan→restore   丢库前 10 行  ->  恢复后 10 行
+```
+
+`db-restore` 把水位线推到「已产出记录里最大行号」，而 `db-scan` 走 `for_ingest`
+语义，从水位线**往后**读。夹在水位线下方、JSONL 里又没有的行（当年被拒的）从此
+扫不到，`db-retry-rejected` 也救不了——它只能重置库里已有的 `rejected` 行。
+
+**这条还没有回归测试锁住**，是我临时脚本验出来的。我本来要补进
+`test_db_integration.py`，被挂起打断了，**这是我这边最优先的欠账**。
+
+**3. `open_dataset` 多了第四个参数 `source_lang`（默认 `"en"`）。**
+
+我改了 `zip_pipeline.py:297` 的调用点传 `dataset.source_lang`。你要是有别的调用点，
+不传不报错，但落库永远是 `en`。`lang_assigned` 的语义和取值一点没动，你的翻译分流
+逻辑不受影响。
+
+### 归你判断的两件
+
+**a. 中文原生集要不要跳过翻译。** 库里现在能认出它们了（`source_lang='zh'`），
+但「认出来之后分流时跳过」是分流的事，归你。目前它们仍会按 `chinese_ratio` 走。
+
+**b. `probe_dataset` 会去读点开头的目录。** 用户跑
+`probe_dataset.py <mm_general> --all --only-bad` 时，第一条输出是：
+
+```
+.cache   ❌读不了   没有 parquet 也没有 zip，里面是 .metadata×5, .lock×5
+```
+
+`.cache` 是 HuggingFace 下载留下的，不是数据集。`--all` 用的是
+`sorted(root.iterdir())`，没排除点目录，所以每个这种目录都会被当成一个集合报一遍，
+还会去 rglob 它。用户看着像卡住了（实际是在遍历），中断了。
+**这是你的文件的判定入口，我没动**——要不要跳过 `.` 开头的目录你定。
+
+### 我今天改了什么（四个提交）
+
+```
+99704d9  feat: sample_source 加 source_lang，与 lang_assigned 分开
+9b11e3d  feat: probe_dataset 加 --only-bad/--json，汇总按结论分组   ← 动了你的文件
+25ff682  docs: 部署文档改为把 MySQL 装进已有 fv 环境，并挑明可写≠持久
+af622df  feat: db-retry-rejected 让改好的解析器重看被拒的行
+```
+
+`9b11e3d` 动了你的 `scripts/probe_dataset.py`：只加开关没动判定逻辑
+（`dataset_probe.py` 一行没碰），但汇总行格式变了，撞掉了你
+`test_all_probes_every_subdirectory_and_survives_a_broken_one` 的断言，
+我改成了 `"共 2 个，可注册 1 个"`。觉得不合适直接改，我不锁这块。
+
+测试：258 passed（真 MySQL 8.4.2）／233 passed + 25 skipped（无库），
+`ruff --select F,E9` 干净。
+
+### 我的欠账清单
+
+1. **给「先 scan 再 restore」补回归测试**（最优先，上面第 2 条）。
+2. `MySQLLedger.is_consumed` 仍不读 `completed_ids`——`db-restore` 顶掉了这次的急，
+   但这个口子还开着。
+3. gap 内的 `rejected` 行仍计入配额，起点之下的不计。要彻底修得改 `is_consumed`
+   的契约。`limit_per_dataset` 是 `None` 的全量灌库不受影响，不急。
+
+---
+
 ## 2026-09-02 · sample_source 加 source_lang，区分「源文本是哪国话」和「被分到哪一侧」
 
 **动了**：`db/schema.py`、`db/ledger.py`、`db/mysql_ledger.py`、`db_commands.py`、
