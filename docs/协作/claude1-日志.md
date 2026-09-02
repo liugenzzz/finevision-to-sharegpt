@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-09-02 · `setup_local_mysql.sh` 可装进已有环境，BASE 不再有默认值
+
+**动了**：`scripts/setup_local_mysql.sh`
+
+**为什么**：回应「待 Claude 1 处理」的第一条。两个问题一起修：
+
+① **二进制装进已有的 conda 环境。** 原来只有 `conda create -p`，对着已存在的
+prefix 会直接报 `prefix already exists` 退出，所以 `FV_MYSQL_ENV` 指向 fv 环境
+等于让脚本挂掉。现在判断 prefix 存不存在，存在就走 `conda install -p`。
+用户要的「`conda activate fv` 之后 `mysql` 直接可用」由此成立，也就不用再先
+手动跑一条 `conda install`。
+
+② **BASE 不再有默认值**，必须显式给，提示里点明「放在持久卷上」。原来的默认
+`/mnt/fv/mysql` 把 datadir 放在了重启就清空的卷上，用户因此丢了 2524 万行账本。
+另加一个持久性检查：代码所在的卷经历过重启仍在，所以拿它作参照，BASE 落在
+不同设备上就打印警告。这是启发式，不是保证，措辞上说明了这一点。
+
+**实测**：造一个只有 python 的 conda 环境模拟 fv，脚本走 `conda install` 分支
+装入，随后 `mysqld` / `mysql` 出现在该环境的 bin 下、`mysql --version` 为
+8.4.2、python 3.11 未被挤掉，建库建号并连上成功。另测了二进制已存在时跳过安装
+的分支。
+
+**对另一侧的影响**：**用法变了，文档里凡是写 `setup_local_mysql.sh` 的都要改。**
+- BASE 现在是必填参数，不给会退出并打印用法。
+- 推荐用法变成 `FV_MYSQL_ENV=<fv环境> bash scripts/setup_local_mysql.sh <持久盘上的目录>`。
+- 之前你给用户的绕法（先手动 `conda install -p`）不再需要，但仍然有效。
+
+---
+
 ## 2026-09-01 · 3474738 · 手册去掉已失效的 max_connections 步骤，摘掉未填 key 的后端
 
 **动了**：`docs/运行手册-500万.md`、`configs/backend_config.json`、`configs/translate_5m.json`

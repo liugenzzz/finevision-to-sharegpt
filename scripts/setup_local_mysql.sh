@@ -5,12 +5,21 @@
 # manager access: conda supplies the binaries, and every piece of runtime
 # state (datadir, socket, pid, log) lives under one base directory.
 #
-#   bash scripts/setup_local_mysql.sh /mnt/fv/mysql
+#   bash scripts/setup_local_mysql.sh /data/fv-mysql
 #
 # Re-running is safe: an existing datadir is reused, not re-initialised.
+#
+# Binaries and data are separate concerns. FV_MYSQL_ENV points the binaries at
+# an existing conda environment — typically the same one the project runs in,
+# so `mysqld` and `mysql` are on PATH after a plain `conda activate`:
+#
+#   FV_MYSQL_ENV=/path/to/envs/fv bash scripts/setup_local_mysql.sh /data/fv-mysql
+#
+# BASE holds only state (datadir, socket, pid, log, my.cnf). Put it on a volume
+# that survives a reboot: losing it loses the whole ledger, not a cache.
 set -euo pipefail
 
-BASE="${1:-/mnt/fv/mysql}"
+BASE="${1:?usage: setup_local_mysql.sh <datadir base>   (put it on a persistent volume)}"
 PORT="${FV_MYSQL_PORT:-3306}"
 DB="${FV_MYSQL_DATABASE:-finevision}"
 USER_NAME="${FV_MYSQL_USER:-fv}"
@@ -29,13 +38,36 @@ LOGFILE="${BASE}/mysqld.log"
 CONFFILE="${BASE}/my.cnf"
 mkdir -p "${BASE}"
 
+# --- persistence check ------------------------------------------------------
+# The repository survived the last reboot, so whatever volume holds it is
+# persistent. If BASE sits on a different one, say so: a lost datadir is a lost
+# ledger, and that is tens of millions of rows, not a cache.
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mkdir -p "${BASE}"
+BASE_DEV="$(df -P "${BASE}" 2>/dev/null | awk 'NR==2 {print $1}')"
+REPO_DEV="$(df -P "${REPO_DIR}" 2>/dev/null | awk 'NR==2 {print $1}')"
+if [ -n "${BASE_DEV}" ] && [ "${BASE_DEV}" != "${REPO_DEV}" ]; then
+  echo "== warning: ${BASE} is on ${BASE_DEV}, the code is on ${REPO_DEV}"
+  echo "   The datadir goes here. If this volume is wiped on reboot the ledger"
+  echo "   goes with it. Put BASE next to the code unless you know otherwise."
+  echo
+fi
+
 # --- binaries ---------------------------------------------------------------
 if [ ! -x "${ENV_PREFIX}/bin/mysqld" ] || [ ! -x "${ENV_PREFIX}/bin/mysql" ]; then
-  echo "== installing mysql-server 8.4 into ${ENV_PREFIX}"
   command -v conda >/dev/null 2>&1 || { echo "conda not found on PATH" >&2; exit 1; }
   export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS:-${BASE}/pkgs}"
   # mysql-server ships only the daemon; the `mysql` client is a separate package.
-  conda create -y -p "${ENV_PREFIX}" -c conda-forge "mysql-server=8.4.2" "mysql-client=8.4.2"
+  # An existing prefix has to be installed into: `conda create` refuses to touch
+  # one, which is exactly what happens when FV_MYSQL_ENV points at the project
+  # environment so that both live together.
+  if [ -d "${ENV_PREFIX}" ]; then
+    echo "== installing mysql-server 8.4 into the existing env ${ENV_PREFIX}"
+    conda install -y -p "${ENV_PREFIX}" -c conda-forge "mysql-server=8.4.2" "mysql-client=8.4.2"
+  else
+    echo "== creating ${ENV_PREFIX} with mysql-server 8.4"
+    conda create -y -p "${ENV_PREFIX}" -c conda-forge "mysql-server=8.4.2" "mysql-client=8.4.2"
+  fi
 fi
 MYSQLD="${ENV_PREFIX}/bin/mysqld"
 MYSQL="${ENV_PREFIX}/bin/mysql"
