@@ -337,13 +337,17 @@ def test_directory_dataset_resumes_without_repeating(tmp_path):
         return load_zip_task_config(path)
 
     first = run_export_zips(config(3))
-    second = run_export_zips(config(3))
+    # The limit is what the dataset contributes in total, so a rerun at the same
+    # number has nothing left to do; raising it is what asks for more rows.
+    unchanged = run_export_zips(config(3))
+    second = run_export_zips(config(6))
     ids = [
         json.loads(line)["id"]
         for line in (tmp_path / "out" / "train.jsonl").read_text(encoding="utf-8").splitlines()
     ]
 
     assert first["written"] == 3
+    assert unchanged["written"] == 0
     assert second["written"] == 3
     assert len(ids) == len(set(ids)) == 6
 

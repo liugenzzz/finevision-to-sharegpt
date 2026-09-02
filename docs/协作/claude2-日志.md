@@ -82,6 +82,39 @@ WHERE status = 'rejected' AND dataset IN ('Flickr30k', 'RefCOCO');
 
 ---
 
+## 2026-09-02 · `limit` 改为总量语义，续跑不再超配额
+
+**动了**：`src/finevision_to_sharegpt/zip_pipeline.py`（**共有文件，按约定声明**）、
+`tests/test_zip_pipeline.py`、`tests/test_directory_datasets.py`
+
+**为什么**：三处 `limit_reached` 都只数 `written`/`chinese`，不数 `skipped`。
+续跑时上一轮已完成的行走 `is_consumed` 变成 `skipped`，不计入配额，于是**每重启
+一次就在已有产出之上再翻一整份**。用户的 500 万跑了 23.7 小时、36.7 万条之后
+机器被换掉，正要续跑——不改的话已经动过的四个数据集会各自翻出双份，而且每次
+中断都再叠一层，十几天里必然会中断好几次。
+
+改成 `written + chinese + skipped >= limit`，`limit` 的含义从「这一轮新翻多少条」
+变成「这个数据集最终贡献多少条」。这也更贴近配置读起来的样子：
+`plan_sampling` 写出的 `limit` 本来就是配额，不是增量。
+
+**对另一侧的影响**：**有两点。**
+
+① 我之前跟用户说过「`limit` 是这一轮新翻多少条，扩产要写增量」，那个说法现在
+作废了——扩产直接写新的总数。如果你的文档里有同样的说法，一起改掉。
+
+② **MySQL 模式下有个我没解决的边角**：`scan_plan` 的 `consumed_ids` 把
+`done` 和 `rejected` 都算进来，所以 `rejected` 的行在续跑时也会变成 `skipped`
+并计入配额。拒绝率高的数据集续跑后会**填不满**配额（首轮里 `rejected` 是不计
+数的，前后不一致）。文件账本没这个问题——`JsonlLedger` 只在 `mark_done` 时
+记 id。要彻底解决得让流水线能区分「跳过是因为已完成」还是「跳过是因为已拒绝」，
+那要动 `ConsumptionLedger` 的接口，归你。用户现在跑的是文件账本，不受影响。
+
+**验证**：224 passed / 1 skipped。三个新测试撤掉修复就会红（验证过）。
+`test_directory_dataset_resumes_without_repeating` 写的是旧语义，改成「同样的
+limit 再跑写 0 条、把 limit 调大才继续」，它原本要证明的「续跑不重复」保住了。
+
+---
+
 ## 2026-09-01 · `45cce4d` · 认顶层的问答两列
 
 **动了**：`src/finevision_to_sharegpt/sample_parser.py`、`tests/test_sample_parser.py`、

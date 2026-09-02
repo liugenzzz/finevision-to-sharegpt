@@ -550,3 +550,104 @@ def test_run_export_zips_does_not_create_raw_jsonl(tmp_path):
     run_export_zips(load_zip_task_config(config_path))
 
     assert not (tmp_path / "output" / "okvqa" / "raw.jsonl").exists()
+
+
+# -- per-dataset limits across a resume ---------------------------------------
+
+
+def make_zip_dataset_with_rows(tmp_path, rows, dataset_name="okvqa"):
+    data_root = tmp_path / "zips"
+    data_root.mkdir(exist_ok=True)
+    parquet_path = tmp_path / f"{dataset_name}.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "images": [[b"\xff\xd8\xff" + str(i).encode()] for i in range(rows)],
+                "texts": [[{"user": f"Q{i}", "assistant": f"A{i}"}] for i in range(rows)],
+            }
+        ),
+        parquet_path,
+    )
+    zip_path = data_root / f"{dataset_name}.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.write(parquet_path, arcname="nested/part.parquet")
+    registry = tmp_path / "datasets.json"
+    registry.write_text(
+        json.dumps({"data_root": str(data_root), "datasets": {dataset_name: {"zip": f"{dataset_name}.zip"}}}),
+        encoding="utf-8",
+    )
+    return registry
+
+
+def _echo_handler(task, client, timeout):
+    return {"id": task.id, "images": task.image_paths, "conversations": []}
+
+
+def test_limit_counts_what_an_earlier_run_already_finished(tmp_path):
+    """A restart must not translate a fresh quota on top of the existing output.
+
+    Rows an earlier run finished come back as ``skipped``. If those do not count
+    toward the limit, every interruption adds another full quota, and a run that
+    gets restarted a few times ends up with several times the planned mix.
+    """
+
+    registry = make_zip_dataset_with_rows(tmp_path, rows=6)
+    config_path = _write_translate_zip_config(tmp_path, registry, limit_per_dataset=2)
+    output = tmp_path / "output" / "train.jsonl"
+
+    first = run_translate_zips(load_zip_task_config(config_path), _SuccessfulPool(), _echo_handler)
+    assert first["written"] == 2
+
+    _write_translate_zip_config(tmp_path, registry, limit_per_dataset=2, resume=True)
+    second = run_translate_zips(load_zip_task_config(config_path), _SuccessfulPool(), _echo_handler)
+
+    assert second["written"] == 0
+    assert second["skipped"] == 2
+    assert len(output.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_a_resume_still_fills_a_limit_that_was_not_reached(tmp_path):
+    """Counting skipped rows must not stop a run that is genuinely unfinished."""
+
+    registry = make_zip_dataset_with_rows(tmp_path, rows=6)
+    config_path = _write_translate_zip_config(tmp_path, registry, limit_per_dataset=2)
+    output = tmp_path / "output" / "train.jsonl"
+
+    run_translate_zips(load_zip_task_config(config_path), _SuccessfulPool(), _echo_handler)
+
+    # The plan grew: this dataset should now contribute 5 rows in total.
+    _write_translate_zip_config(tmp_path, registry, limit_per_dataset=5, resume=True)
+    second = run_translate_zips(load_zip_task_config(config_path), _SuccessfulPool(), _echo_handler)
+
+    assert second["written"] == 3
+    assert second["skipped"] == 2
+    ids = [json.loads(line)["id"] for line in output.read_text(encoding="utf-8").splitlines()]
+    assert len(ids) == 5
+    assert len(set(ids)) == 5
+
+
+def test_export_limit_also_counts_earlier_rows(tmp_path):
+    registry = make_zip_dataset_with_rows(tmp_path, rows=6)
+    output = tmp_path / "export" / "train.jsonl"
+
+    def write_config(resume):
+        path = tmp_path / "export.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "dataset_registry": str(registry),
+                    "datasets": ["okvqa"],
+                    "output_jsonl": str(output),
+                    "limit_per_dataset": 2,
+                    "resume": resume,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    run_export_zips(load_zip_task_config(write_config(False)))
+    second = run_export_zips(load_zip_task_config(write_config(True)))
+
+    assert second["written"] == 0
+    assert len(output.read_text(encoding="utf-8").splitlines()) == 2

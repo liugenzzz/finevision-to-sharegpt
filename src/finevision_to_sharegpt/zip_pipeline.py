@@ -68,7 +68,7 @@ def run_export_zips(config: ZipTaskConfig, progress_factory: Any | None = None) 
             tmp_root=Path(tmp),
             description_prefix="export",
             stats_factory=lambda: {"processed": 0, "written": 0, "rejected": 0, "skipped": 0},
-            limit_reached=lambda stats, limit: stats["written"] >= limit,
+            limit_reached=lambda stats, limit: stats["written"] + stats["skipped"] >= limit,
         ):
             record = build_sharegpt_record(item.sample, item.image_paths)
             _write_record(config, item.dataset.name, record)
@@ -148,7 +148,7 @@ def _run_translate_zips(
                     "failed": 0,
                     "skipped": 0,
                 },
-                limit_reached=lambda stats, limit: stats["written"] + stats["chinese"] >= limit,
+                limit_reached=lambda stats, limit: stats["written"] + stats["chinese"] + stats["skipped"] >= limit,
                 progress_state=progress_state,
             ):
                 if config.emit_raw and item.sample_id not in raw_done[item.dataset.name]:
@@ -261,6 +261,13 @@ def _prepare_zip_run(
 
 def _batch_id(config: ZipTaskConfig) -> str:
     return config.batch_id or time.strftime("%Y%m%d-%H%M%S")
+
+
+# ``limit`` counts what a dataset contributes in total, not what one run adds.
+# Rows an earlier run already finished come back as ``skipped``, so they have to
+# count too: without that, every restart translates a fresh ``limit`` on top of
+# what is already in the output, and a long run that gets interrupted a few
+# times quietly ends up with several times the planned quota.
 
 
 def _iter_dataset_rows(
@@ -609,7 +616,7 @@ def run_scan_zips(
             tmp_root=Path(tmp),
             description_prefix="scan",
             stats_factory=lambda: {"processed": 0, "written": 0, "rejected": 0, "skipped": 0},
-            limit_reached=lambda stats, limit: stats["written"] >= limit,
+            limit_reached=lambda stats, limit: stats["written"] + stats["skipped"] >= limit,
             claim_status="pending",
             write_images=write_images,
             for_ingest=True,
