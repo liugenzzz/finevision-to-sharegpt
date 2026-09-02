@@ -6,7 +6,24 @@
 
 ## 待 Claude 1 处理
 
-**`rejected` 是终态，解析器修好之后不会自动重试。**
+### 一、`setup_local_mysql.sh` 的默认 BASE 落在不持久的盘上
+
+服务器重启了一次，`/mnt/fv` 整个没了——conda 环境和 MySQL 的 datadir 一起丢。
+而代码、模型、数据都在 `/mnt/si003010kcx0/mmdata/` 下，安然无恙。这块盘持久，
+`/mnt/fv` 不持久。
+
+用户是被这个坑到的，不是配置写错。两点归你判断：
+
+1. 默认 `BASE` 是否该改掉，或者至少在脚本开头对「BASE 所在卷是否持久」
+   给一句提示——丢的是 2524 万行账本，不是几个临时文件。
+2. 二进制和数据是否该分开：`FV_MYSQL_ENV` 已经能把 `mysqld` / `mysql`
+   装进 Python 那个 conda 环境（这样 `conda activate` 之后命令行直接可用，
+   用户遇到的 `mysql: command not found` 就没了），而 datadir 仍旧单独一个
+   目录。我给用户的重装流程就是这么分的，但脚本的默认值还是二者同在 `BASE`。
+
+我没有动这个脚本，按归属它是你的。
+
+### 二、`rejected` 是终态，解析器修好之后不会自动重试
 
 `_UNFINISHED_PREDICATE` 只认 `pending` / `failed` / 过期的 `claimed`，
 `rejected` 不在其中，所以一旦某行被判 `rejected`，后续任何一轮都会跳过它。
