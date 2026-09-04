@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import zipfile
 from collections import Counter
@@ -101,22 +102,51 @@ def probe_zip(path: Path, rows: int = 5) -> Probe:
     return probe
 
 
+# Enough files to name what a directory is full of. A collection with no parquet
+# can still hold millions of images, and listing all of them to print
+# ".jpg×2000000" says nothing the first few hundred did not.
+_CENSUS_LIMIT = 500
+
+
+def _first_file(directory: Path, suffix: str) -> Path | None:
+    """First file with ``suffix``, in a stable order, without walking the whole tree.
+
+    ``sorted(rglob(...))`` materialises every match before picking one, so
+    probing a multi-terabyte collection meant a full recursive stat of the tree
+    just to read five rows — on a network mount that reads as a hang. Walking
+    top-down in sorted order reaches a representative shard and stops there.
+    """
+
+    for current, dirnames, filenames in os.walk(directory):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if name.lower().endswith(suffix):
+                return Path(current) / name
+    return None
+
+
 def probe_dataset(directory: Path, rows: int = 5) -> Probe:
     """Probe a collection directory, preferring bare parquet over zipped parquet."""
 
-    parquet = next(iter(sorted(directory.rglob("*.parquet"))), None)
+    parquet = _first_file(directory, ".parquet")
     if parquet is not None:
         probe = probe_parquet(parquet, rows)
         probe.source = str(parquet.relative_to(directory))
         return probe
 
-    zips = sorted(directory.rglob("*.zip"))
-    if not zips:
-        listing = [item for item in directory.rglob("*") if item.is_file()]
-        return Probe("unreadable", detail=f"没有 parquet 也没有 zip，{_extensions(str(i) for i in listing)}")
     # Only the first zip is opened: a collection mixes formats far less often
     # than it holds hundreds of shards, and opening every one is slow.
-    return probe_zip(zips[0], rows)
+    archive = _first_file(directory, ".zip")
+    if archive is not None:
+        return probe_zip(archive, rows)
+
+    listing: list[str] = []
+    for current, dirnames, filenames in os.walk(directory):
+        dirnames.sort()
+        listing.extend(filenames)
+        if len(listing) >= _CENSUS_LIMIT:
+            break
+    return Probe("unreadable", detail=f"没有 parquet 也没有 zip，{_extensions(listing)}")
 
 
 def _preview(sample, width: int = 60) -> str:
