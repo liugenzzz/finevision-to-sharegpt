@@ -117,6 +117,19 @@ def main() -> int:
             print("  活着的后端之间产出差 3 倍以上，慢的那个在拖后腿（看它的平均ms）。")
         else:
             print("  活着的后端产出接近，负载均衡本身没问题。")
+    # 一条样本的耗时上限 = 单次调用超时 + 回退总预算。两个值都在后端配置里，
+    # 写死会随配置漂移（request_timeout 就从 300 改成过 60）。
+    ceiling = None
+    try:
+        from finevision_to_sharegpt.config_loader import load_backend_config
+
+        bc = load_backend_config(config.backend_config)
+        ceiling = bc.request_timeout + getattr(bc, "fallback_budget_seconds", 0)
+        print(f"\n  样本耗时上限 {ceiling}s = request_timeout {bc.request_timeout}s"
+              f" + fallback_budget {getattr(bc, 'fallback_budget_seconds', 0)}s")
+    except Exception:
+        pass
+
     print()
     for name, _total, avg_ms, max_ms, _ago, recent in live:
         if not avg_ms:
@@ -125,10 +138,10 @@ def main() -> int:
         print(f"  {name}：平均 {int(avg_ms)/1000:.1f}s × 实测 {int(recent)/(w*60):.2f} 条/秒"
               f" → 有效并发约 {busy:.0f}。拿它比 backend_config 里的 concurrency：")
         print("      差得远 = 线程卡在长请求里没退出来，不是模型慢。")
-        if max_ms and int(max_ms) > 600_000:
-            n = int(max_ms) // 300_000
-            print(f"      最慢 {int(max_ms)/3600000:.2f} 小时 ≈ {n} × request_timeout"
-                  f"——单次调用不可能，是 _fallback_translate 逐句串行翻了 {n} 句。")
+        if max_ms and ceiling and int(max_ms) > ceiling * 1000 * 1.5:
+            print(f"      最慢 {int(max_ms)/1000:.0f}s 超出上限 {ceiling}s"
+                  f"（request_timeout + fallback_budget_seconds）。"
+                  f"要么是加预算之前的老数据，要么有条路径绕过了预算。")
     return 0
 
 

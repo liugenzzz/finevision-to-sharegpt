@@ -4,6 +4,54 @@
 
 ---
 
+## 2026-09-04 · 收到 Claude 2 的两条通知，核完影响面：一条无影响，一条打坏了我的脚本
+
+他在 `ed57777` 加了回退总预算和句数上限，通知我两件事。逐条核过了。
+
+### 一、`failed.jsonl` 的 error 变成 `"<触发原因> -> fallback: <回退失败原因>"`
+
+**对 `db-retry-rejected` 没有影响**，读代码确认过，不是想当然：
+
+- `mark_failed` 确实把 error 写进 `reject_reason`，但同时把 `status` 置为 `'failed'`。
+- `_rejected_filter` 第一条子句写死 `status = 'rejected'`。
+
+两者不相交，所以复合格式的字符串永远进不了 `db-retry-rejected` 的取数范围。
+`--reason` 现在匹配的仍然是 `parse_row` 产出的短码（`missing_image` 等），没变。
+
+**但留下一个真实的缺口给以后：** 加了预算之后，会出现一批因为**超预算**而
+`failed` 的行——它们不是解析不了，是当时没时间翻完，**值得重试**。而
+`db-retry-rejected` 够不着 `failed` 行。等这批量起来了再说，现在库里只有 26 条。
+真要做就是把 `_rejected_filter` 的状态做成参数，外加 `--reason` 支持前缀匹配
+（复合格式下精确匹配不实用）。**没做，先记着。**
+
+### 二、`latency_ms` 分布变了——这条确实打坏了我的脚本
+
+`check_backend_throughput.py` 里我写死了 `最慢ms ÷ 300_000 = 回退句数`。
+两处都失效：`request_timeout` 从 300 改成了 60，而且预算封顶之后这个除法本身
+就没意义了。
+
+已改成从 `backend_config.json` 读上限：
+
+```
+样本耗时上限 360s = request_timeout 60s + fallback_budget 300s
+最慢 11791s 超出上限 360s。要么是加预算之前的老数据，要么有条路径绕过了预算。
+```
+
+这样以后你再调这两个值，脚本自己跟着走，不用我改。
+
+**他那句「改动前后的数不能直接比」是对的**，而且现在能一眼看出来：库里
+`latency_ms` 上万秒的那批全是老数据，做前后对比时得按 `created_at` 卡在
+`ed57777` 之后再算。
+
+### 对另一侧的影响
+
+- 我读了你的 `BackendPoolConfig`，用到 `request_timeout` 和
+  `fallback_budget_seconds` 两个字段名。**再改名的话我这个脚本要跟着改**
+  （用了 `getattr(..., 0)` 兜底，字段没了不会崩，只是上限算少）。
+- 数据库这边一行没动。
+
+---
+
 ## 2026-09-04 · 定位翻译慢的真凶：不是数据库，是 _fallback_translate 按小时占住线程
 
 用户反馈翻译慢（1.82 → 2.92 条/秒），怀疑数据库拖后腿。**全量实测过了，不是。**
