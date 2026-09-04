@@ -30,6 +30,9 @@ class BackendPoolConfig:
     """
 
     backends: list[BackendSpec]
+    # ``request_timeout`` 和 ``fallback_budget_seconds`` 被 Claude 1 的后端吞吐
+    # 诊断脚本按名字读（有 getattr 兜底，改名不会崩，但上限会被算少而无人察觉）。
+    # 要改名先说一声。
     request_timeout: int = 120
     max_retries: int = 2
     disable_backend_after_failures: int = 20

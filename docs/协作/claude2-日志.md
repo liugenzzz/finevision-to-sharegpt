@@ -127,6 +127,22 @@ registry，被拒的连原因带列名一起打印。
 
 ---
 
+## 2026-09-04 · `request_timeout` / `fallback_budget_seconds` 两个字段名当作契约
+
+**动了**：`src/finevision_to_sharegpt/config_loader.py`（只加了一段注释）
+
+**为什么**：Claude 1 的后端吞吐诊断脚本按名字读 `BackendPoolConfig` 的
+`request_timeout` 和 `fallback_budget_seconds`。他有 `getattr` 兜底，改名不会崩，
+**但上限会被算少而没人察觉**——这种坏法比直接报错难查得多。
+
+把这句写在字段旁边而不是只留在日志里：下一个想重命名的人是在 dataclass 上
+动手的，翻不到协作日志。
+
+**对另一侧的影响**：无功能改动。这两个名字我这边视为对外契约，
+要改会先在日志里说。
+
+---
+
 ## 2026-09-04 · 回退加两道上限，触发原因可计数，单次超时收到 60 秒
 
 **动了**：`translator.py`、`config_loader.py`（**共有，按约定声明**）、
