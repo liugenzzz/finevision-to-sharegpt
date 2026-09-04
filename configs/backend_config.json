@@ -1,6 +1,6 @@
 {
-  "_comment": "翻译后端池。model 是实例的 --served-model-name（问一句就知道: curl -H 'Authorization: Bearer <key>' <api_base 去掉 /chat/completions>/models）。api_base 必须是完整的 /v1/chat/completions，只写到 /v1 会 404。调度只看 concurrency：每个后端起这么多线程，从同一个队列里抢任务，数值对齐实例的 --max-num-seqs（现在是 128）——低于它服务端就永远喂不满，高于它多出来的只会在服务端排队、不产生吞吐。快的后端自然抢得多，不需要手动配权重（weight 字段留着兼容，实际不参与调度）。某个后端连续失败 disable_backend_after_failures 次会被摘掉，剩下的继续跑。三个时间上限：request_timeout 管单次调用；整段翻译解析失败后会退化成逐句翻，fallback_budget_seconds 管这条样本在回退上总共能花多久，fallback_max_turns 则让过长的对话根本不进回退——不设上限时一条 39 轮的对话按每句 300 秒能占住一条线程 3.27 小时。",
-  "request_timeout": 60,
+  "_comment": "翻译后端池。model 是实例的 --served-model-name；api_base 必须是完整的 /v1/chat/completions，只写到 /v1 会 404。调度只看 concurrency：每个后端起这么多线程，从同一个队列抢任务，快的后端自然抢得多（weight 留着兼容，不参与调度）。concurrency 要对齐服务端**真能同时跑**的条数，不是 --max-num-seqs 那个上限——上限 128 但 KV cache 只装得下几十条时，多出来的线程只在服务端排队，不增加吞吐（吞吐由 GPU 定）却拖长每条的墙上时间。实测把 64 提到 128 之后，86% 的样本整段翻译超时、全部退化成逐句。真实并发看 vLLM 日志的 Running: N。三个时间上限：request_timeout 管单次调用；整段解析失败会退化成逐句翻，fallback_budget_seconds 管这条样本在回退上总共能花多久，fallback_max_turns 让过长的对话根本不进回退。",
+  "request_timeout": 120,
   "max_retries": 2,
   "disable_backend_after_failures": 20,
   "fallback_budget_seconds": 300,
@@ -12,7 +12,7 @@
       "api_base": "http://127.0.0.1:8001/v1/chat/completions",
       "model": "Qwen3.8-27B",
       "api_key": "local-pool-key",
-      "concurrency": 128,
+      "concurrency": 64,
       "weight": 1,
       "extra_body": {
         "chat_template_kwargs": {
@@ -26,7 +26,7 @@
       "api_base": "http://127.0.0.1:8002/v1/chat/completions",
       "model": "Qwen3.8-27B",
       "api_key": "local-pool-key",
-      "concurrency": 128,
+      "concurrency": 64,
       "weight": 1,
       "extra_body": {
         "chat_template_kwargs": {
@@ -40,7 +40,7 @@
       "api_base": "http://127.0.0.1:8003/v1/chat/completions",
       "model": "Qwen3.8-27B",
       "api_key": "local-pool-key",
-      "concurrency": 128,
+      "concurrency": 64,
       "weight": 1,
       "extra_body": {
         "chat_template_kwargs": {
@@ -54,7 +54,7 @@
       "api_base": "http://127.0.0.1:8004/v1/chat/completions",
       "model": "Qwen3.8-27B",
       "api_key": "local-pool-key",
-      "concurrency": 128,
+      "concurrency": 64,
       "weight": 1,
       "extra_body": {
         "chat_template_kwargs": {

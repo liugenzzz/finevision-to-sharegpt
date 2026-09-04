@@ -127,6 +127,39 @@ registry，被拒的连原因带列名一起打印。
 
 ---
 
+## 2026-09-04 · 撤回并发 128：我把两个参数往相反方向调，造成 86% 超时
+
+**动了**：`configs/backend_config.json`（并发 128 → 64，`request_timeout` 60 → 120）
+
+**为什么**：上一轮我同时做了方向相反的两件事——并发 64 → 128（队列变深）、
+`request_timeout` 300 → 60（耐心变短）。用户跑了 36 分钟的结果：
+
+```
+processed 8135, written 4558, failed 1016
+fallback  total 7049, by_reason {"timeout": 6930, ...}
+```
+
+**86% 的样本整段翻译超时**，全部退化成逐句，其中 98% 的回退触发原因是 `timeout`。
+这是我的误判，不是回退上限本身的问题。
+
+**认识上的修正**：`--max-num-seqs 128` 是**上限**，不是服务端真能同时跑的条数——
+真实并发由 KV cache 决定。offered 并发超过它之后，多出来的只在服务端排队：
+**不增加吞吐（吞吐由 GPU 定），只拉长每条的墙上时间**，于是撞上超时。
+正确做法是让 concurrency 对齐 vLLM 日志里的 `Running: N`，而不是配置上限。
+这条写进 `backend_config.json` 的注释了。
+
+`request_timeout` 也没有回到 300：回退现在有 `fallback_budget_seconds` 兜底，
+不需要靠单次超时来防长尾，120 秒是个能吸收正常排队又不放任卡死的值。
+
+**对另一侧的影响**：无代码改动，纯配置。但你那份按 `latency_ms` 的诊断，
+**60 秒那一轮的数据要整段丢弃**——那不是稳态，是我调坏的窗口。
+
+**待观察**：重启后 `fallback.jsonl` 里 `timeout` 的占比应该大幅下降。
+如果降下来之后主因变成 `too_few_turns`，那才是真问题（`max_tokens` 不够、
+长对话被截断），处方和 `not_json`（提示词太松）相反——这正是加分类计数的意义。
+
+---
+
 ## 2026-09-04 · `request_timeout` / `fallback_budget_seconds` 两个字段名当作契约
 
 **动了**：`src/finevision_to_sharegpt/config_loader.py`（只加了一段注释）
