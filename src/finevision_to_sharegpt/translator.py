@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -101,7 +103,21 @@ def translate_sample(
     sample_prompt: str = DEFAULT_SAMPLE_PROMPT,
     utterance_prompt: str = DEFAULT_UTTERANCE_PROMPT,
     timeout: int = 120,
+    fallback_budget_seconds: int = 300,
+    fallback_max_turns: int = 12,
+    on_fallback: Callable[[str, int], None] | None = None,
 ) -> TranslationResult:
+    """Translate one sample, falling back to per-utterance calls if needed.
+
+    The fallback is bounded twice over. Without a bound it is one call per turn
+    at the full request timeout with no cap on turns, so a single long
+    conversation can hold a worker for hours: a 39-turn sample at 300s a turn is
+    3.27 of them, and a pool loses that slot for the duration. A sample that
+    cannot be translated inside the budget is worth far less than the throughput
+    spent insisting on it — it fails, lands in ``failed.jsonl``, and can be
+    retried later in a run of its own.
+    """
+
     try:
         response = client.chat(
             prompt=sample_prompt.format(input=_turns_json(sample)),
@@ -109,11 +125,22 @@ def translate_sample(
             timeout=timeout,
         )
         conversations = _parse_conversations(response, sample)
-    except Exception:
+    except Exception as exc:
+        if on_fallback is not None:
+            on_fallback(failure_code(exc), len(sample.turns))
         try:
-            conversations = _fallback_translate(client, sample, utterance_prompt, timeout)
-        except Exception as exc:
-            return TranslationResult(ok=False, error=str(exc))
+            conversations = _fallback_translate(
+                client,
+                sample,
+                utterance_prompt,
+                timeout,
+                budget_seconds=fallback_budget_seconds,
+                max_turns=fallback_max_turns,
+            )
+        except Exception as fallback_error:
+            return TranslationResult(
+                ok=False, error=f"{failure_code(exc)} -> fallback: {fallback_error}"
+            )
 
     record = build_sharegpt_record(sample, image_paths, conversations)
     return TranslationResult(ok=True, record=record)
@@ -140,30 +167,61 @@ def _turns_json(sample: SourceSample) -> str:
     )
 
 
+class ParseFailure(ValueError):
+    """A whole-sample response the parser rejected, with a groupable ``code``.
+
+    The fallback that follows costs one model call per turn, so the run needs to
+    know *why* it is being paid for. A free-text message cannot be counted; a
+    short code can, and the codes are what tell "the model is emitting prose"
+    apart from "the answer was truncated".
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 def _parse_conversations(response: str, sample: SourceSample) -> list[dict[str, str]]:
-    data = extract_json_object(response)
+    try:
+        data = extract_json_object(response)
+    except Exception as exc:
+        raise ParseFailure("not_json", f"response was not JSON: {exc}") from exc
     if not isinstance(data, dict):
-        raise ValueError("model JSON was not an object")
+        raise ParseFailure("not_object", "model JSON was not an object")
     conversations = data.get("conversations")
     if not isinstance(conversations, list):
-        raise ValueError("model JSON did not include conversations")
+        raise ParseFailure("no_conversations", "model JSON did not include conversations")
     if len(conversations) < len(sample.turns):
-        raise ValueError("translated turn count did not match source")
+        raise ParseFailure(
+            "too_few_turns",
+            f"translated {len(conversations)} turns for a {len(sample.turns)}-turn sample",
+        )
     if len(conversations) > len(sample.turns):
         conversations = conversations[: len(sample.turns)]
 
     normalized = []
     for translated, source_turn in zip(conversations, sample.turns):
         if not isinstance(translated, dict):
-            raise ValueError("translated turn was not an object")
+            raise ParseFailure("turn_not_object", "translated turn was not an object")
         role = translated.get("from")
         value = translated.get("value")
         if role != source_turn.role:
-            raise ValueError("translated role order did not match source")
+            raise ParseFailure("role_order", "translated role order did not match source")
         if not isinstance(value, str) or not value.strip():
-            raise ValueError("translated value was empty")
+            raise ParseFailure("empty_value", "translated value was empty")
         normalized.append({"from": role, "value": _strip_image_token(value.strip())})
     return normalized
+
+
+def failure_code(error: BaseException) -> str:
+    """One short, groupable label for whatever went wrong."""
+
+    if isinstance(error, ParseFailure):
+        return error.code
+    name = type(error).__name__
+    if "Timeout" in name:
+        return "timeout"
+    return f"other:{name}"
 
 
 def _fallback_translate(
@@ -171,13 +229,38 @@ def _fallback_translate(
     sample: SourceSample,
     utterance_prompt: str,
     timeout: int,
+    budget_seconds: int = 300,
+    max_turns: int = 12,
 ) -> list[dict[str, str]]:
+    """One call per turn, under a total time budget and a turn cap.
+
+    The turn cap is checked before anything is spent: a 39-turn conversation is
+    never worth entering utterance by utterance. The budget then bounds the rest,
+    and each call is given only the time that is actually left, so the last one
+    cannot overrun it.
+    """
+
+    if max_turns and len(sample.turns) > max_turns:
+        raise TimeoutError(
+            f"{len(sample.turns)} turns exceeds the fallback cap of {max_turns}"
+        )
+    deadline = time.monotonic() + budget_seconds if budget_seconds else None
+
     conversations = []
-    for turn in sample.turns:
+    for index, turn in enumerate(sample.turns):
+        call_timeout = timeout
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"fallback budget of {budget_seconds}s ran out after {index}"
+                    f"/{len(sample.turns)} turns"
+                )
+            call_timeout = max(1, min(timeout, int(remaining)))
         translated = client.chat(
             prompt=utterance_prompt.format(input=turn.text),
             image_bytes=sample.image_bytes_list,
-            timeout=timeout,
+            timeout=call_timeout,
         )
         cleaned = strip_reasoning(translated)
         if not cleaned.strip():

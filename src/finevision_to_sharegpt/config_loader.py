@@ -21,10 +21,20 @@ class BackendSpec:
 
 @dataclass(frozen=True)
 class BackendPoolConfig:
+    """How long the pool is willing to wait, and on what.
+
+    ``request_timeout`` bounds one call. The two fallback limits bound the whole
+    sample: without them the per-utterance retry path is one full-timeout call
+    per turn with no cap on turns, so a single long conversation can hold a
+    worker for hours.
+    """
+
     backends: list[BackendSpec]
     request_timeout: int = 120
     max_retries: int = 2
     disable_backend_after_failures: int = 20
+    fallback_budget_seconds: int = 300
+    fallback_max_turns: int = 12
 
 
 @dataclass(frozen=True)
@@ -91,6 +101,8 @@ def load_backend_config(path: Path | str) -> BackendPoolConfig:
         request_timeout=int(data.get("request_timeout", 120)),
         max_retries=int(data.get("max_retries", 2)),
         disable_backend_after_failures=int(data.get("disable_backend_after_failures", 20)),
+        fallback_budget_seconds=int(data.get("fallback_budget_seconds", 300)),
+        fallback_max_turns=int(data.get("fallback_max_turns", 12)),
     )
 
 

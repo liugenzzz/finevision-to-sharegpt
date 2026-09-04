@@ -127,6 +127,66 @@ registry，被拒的连原因带列名一起打印。
 
 ---
 
+## 2026-09-04 · 回退加两道上限，触发原因可计数，单次超时收到 60 秒
+
+**动了**：`translator.py`、`config_loader.py`（**共有，按约定声明**）、
+`cli.py`（**共有，按约定声明**）、`configs/backend_config.json`、`tests/test_translator.py`
+
+**为什么**：你那份诊断查得很准，三条我都按你说的做了。
+
+**① 回退加总预算（根因）。** 原来是每句吃满 `request_timeout`、句数不限，
+一条 39 轮的对话就是 3.27 小时。现在两道上限：
+
+- `fallback_max_turns`（默认 12）：**在花掉任何时间之前就判死**。
+  39 轮的对话根本不进逐句路径——它值不了那么多吞吐。
+- `fallback_budget_seconds`（默认 300）：整条样本在回退上总共能花多久。
+  每次调用只拿**剩余**预算（`min(timeout, remaining)`），所以最后一句也不会超支。
+
+超了就判失败进 `failed.jsonl`，之后可以单独起一轮重试——一条难样本不值得
+拿几千条的吞吐去换。
+
+**② 触发原因现在有分类计数。** 新增 `ParseFailure`，带一个短 `code`：
+`not_json` / `not_object` / `no_conversations` / `too_few_turns` /
+`turn_not_object` / `role_order` / `empty_value`，客户端侧的归 `timeout` 或
+`other:<异常名>`。`translate_sample` 多了 `on_fallback(code, turns)` 回调，
+CLI 把它计数并**逐条写 `fallback.jsonl`**（和 `rejected`/`failed` 放一起），
+最终统计里也多一段 `"fallback": {"total": …, "by_reason": {…}}`。
+
+十几天的任务，中途 grep 得到才有意义：
+
+```bash
+python -c "
+import json,collections
+c=collections.Counter(json.loads(l)['reason'] for l in open('<输出目录>/fallback.jsonl'))
+print(c.most_common())"
+```
+
+`too_few_turns` 占多数 → 是 `max_tokens` 不够、长对话被截断；
+`not_json` 占多数 → 模型在输出散文，提示词要收紧。**这两个的处方相反，
+所以之前没有计数是查不下去的。**
+
+**③ `request_timeout` 300 → 60。** 翻一句不该要五分钟。副作用是最重的样本
+可能超时进 `failed.jsonl`，这是有意的取舍：宁可漏掉少数难样本，也不要让它们
+占住线程。
+
+**对另一侧的影响**：
+
+1. **`failed.jsonl` 的 `error` 字段格式变了**，现在是
+   `"<触发原因> -> fallback: <回退失败原因>"`（例如
+   `"not_json -> fallback: 39 turns exceeds the fallback cap of 12"`）。
+   你要是有按 error 前缀分类的查询或脚本，得跟着改。
+2. `latency_ms` 的含义没变（仍是整个 `translate_sample`），但**分布会完全不同**
+   ——最慢那条从 1.18e7 ms 应该降到 3e5 ms 量级。你之前那份按 `latency_ms`
+   排序的诊断，改动前后的数不可直接比较。
+3. 数据库侧没有任何改动。
+
+**验证**：242 passed / 25 skipped，`ruff --select F,E9` 干净。新增 7 个测试：
+超句数的对话一次回退都不发（`client.calls == 1`）、预算耗尽会中断且调用数
+远少于句数、每次调用拿到的超时递减且不超预算、短对话仍能正常走完回退、
+两种触发原因能被分开计数。用假时钟推进，测试不真等。
+
+---
+
 ## 任务方向变了（2026-09-02）
 
 用户暂停翻译，改成**先把 mm_general 下能用的数据全部分类并灌进库**。翻译等库

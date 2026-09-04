@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import threading
 import time
+from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
@@ -266,6 +268,18 @@ def run_translate_zips_from_config(config_path: Path | str) -> dict[str, Any]:
     sample_prompt = load_prompt(config.sample_prompt_file, DEFAULT_SAMPLE_PROMPT)
     utterance_prompt = load_prompt(config.utterance_prompt_file, DEFAULT_UTTERANCE_PROMPT)
 
+    # 回退每触发一次就是一条样本退化成逐句翻译，代价是整段的好几倍。
+    # 计数留在内存里给最终统计，同时逐条写盘——十几天的任务，中途能 grep
+    # 出「为什么在回退」比跑完才知道有用得多。
+    fallback_counts: Counter[str] = Counter()
+    fallback_lock = threading.Lock()
+    fallback_path = config.output_jsonl.with_name("fallback.jsonl")
+
+    def note_fallback(code: str, turns: int) -> None:
+        with fallback_lock:
+            fallback_counts[code] += 1
+        append_jsonl(fallback_path, {"reason": code, "turns": turns})
+
     def handler(task: TranslationTask, client: Any, timeout: int) -> dict[str, Any]:
         started = time.monotonic()
         result = translate_sample(
@@ -275,6 +289,9 @@ def run_translate_zips_from_config(config_path: Path | str) -> dict[str, Any]:
             sample_prompt=sample_prompt,
             utterance_prompt=utterance_prompt,
             timeout=timeout,
+            fallback_budget_seconds=backend_config.fallback_budget_seconds,
+            fallback_max_turns=backend_config.fallback_max_turns,
+            on_fallback=note_fallback,
         )
         if task.metadata is not None:
             task.metadata["latency_ms"] = int((time.monotonic() - started) * 1000)
@@ -282,7 +299,7 @@ def run_translate_zips_from_config(config_path: Path | str) -> dict[str, Any]:
             raise RuntimeError(result.error or "translation failed")
         return result.record
 
-    return run_translate_zips_config(
+    stats = run_translate_zips_config(
         config,
         pool,
         handler,
@@ -292,6 +309,11 @@ def run_translate_zips_from_config(config_path: Path | str) -> dict[str, Any]:
             "prompt_version": prompt_version(sample_prompt, utterance_prompt),
         },
     )
+    stats["fallback"] = {
+        "total": sum(fallback_counts.values()),
+        "by_reason": dict(fallback_counts.most_common()),
+    }
+    return stats
 
 
 def _make_backend_pool(backend_config: Any) -> TranslationBackendPool:
