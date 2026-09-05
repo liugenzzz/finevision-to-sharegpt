@@ -1,6 +1,6 @@
 {
-  "_comment": "翻译后端池。model 是实例的 --served-model-name；api_base 必须是完整的 /v1/chat/completions，只写到 /v1 会 404。调度只看 concurrency：每个后端起这么多线程，从同一个队列抢任务，快的后端自然抢得多（weight 留着兼容，不参与调度）。concurrency 要对齐服务端**真能同时跑**的条数，不是 --max-num-seqs 那个上限——上限 128 但 KV cache 只装得下几十条时，多出来的线程只在服务端排队，不增加吞吐（吞吐由 GPU 定）却拖长每条的墙上时间。实测把 64 提到 128 之后，86% 的样本整段翻译超时、全部退化成逐句。真实并发看 vLLM 日志的 Running: N。三个时间上限：request_timeout 管单次调用；整段解析失败会退化成逐句翻，fallback_budget_seconds 管这条样本在回退上总共能花多久，fallback_max_turns 让过长的对话根本不进回退。",
-  "request_timeout": 120,
+  "_comment": "翻译后端池。model 是实例的 --served-model-name；api_base 必须是完整的 /v1/chat/completions，只写到 /v1 会 404。调度只看 concurrency：每个后端起这么多线程，从同一个队列抢任务，快的后端自然抢得多（weight 留着兼容，不参与调度）。concurrency 要对齐服务端**真能同时跑**的条数（看 vLLM 日志的 Running: N），不是 --max-num-seqs 那个上限——多出来的只在服务端排队，不增加吞吐却拖长墙上时间。request_timeout 给到 300 是因为回退现在独立设了上限：不设上限时它是「每句一次调用 × 句数不限」，300 秒的单次超时会被放大成几小时；现在 fallback_budget_seconds 管整条样本的回退总时长、fallback_max_turns 让过长的对话根本不进回退，单次超时就可以放宽到真正需要的长度。反过来说超时不能设太短：整段翻译超时会退化成逐句，一条样本从 1 次调用变成十几次，负载翻几倍、排队更长、更多超时——实测把它降到 60 秒时 86% 的样本都在走回退。",
+  "request_timeout": 300,
   "max_retries": 2,
   "disable_backend_after_failures": 20,
   "fallback_budget_seconds": 300,
