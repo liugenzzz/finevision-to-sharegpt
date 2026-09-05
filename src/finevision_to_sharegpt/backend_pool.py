@@ -16,6 +16,39 @@ class BackendResult:
     value: Any = None
     error: str | None = None
     backend_name: str | None = None
+    # 这一条失败是不是"后端本身不可用"。见 is_backend_fault。
+    backend_fault: bool = False
+
+
+# 只有这些说明后端本身用不了：连不上、认证不过、模型名不对。其余——超时、
+# 5xx 过载、译文解析不了——都是"这条任务没成"，跟后端健康与否无关。
+# 高并发下响应慢，或者撞上一串长对话，健康的后端照样会连续失败几十次；
+# 按失败次数摘后端，摘掉的往往是好的。
+_BACKEND_FAULT_MARKERS = (
+    "connect",
+    "connection refused",
+    "name or service not known",
+    "nodename nor servname",
+    "ssl",
+    "401",
+    "403",
+    "404",
+    "unauthorized",
+    "forbidden",
+    "does not exist",
+    "invalid api key",
+)
+
+
+def is_backend_fault(error: str | None) -> bool:
+    """这条失败是否说明后端本身用不了，而不只是这条任务没成。"""
+
+    if not error:
+        return False
+    text = error.lower()
+    if "timeout" in text or "timed out" in text:
+        return False
+    return any(marker in text for marker in _BACKEND_FAULT_MARKERS)
 
 
 class TranslationBackendPool:
@@ -75,13 +108,20 @@ class TranslationBackendPool:
                     if result.ok:
                         with state_lock:
                             failures[backend.name] = 0
+                    elif not result.backend_fault:
+                        # 任务失败不计入停用：超时和难样本不是后端的错。
+                        pass
                     else:
                         with state_lock:
                             failures[backend.name] += 1
+                            alive = [n for n, off in disabled.items() if not off]
                             if (
                                 self.config.disable_backend_after_failures > 0
                                 and failures[backend.name] >= self.config.disable_backend_after_failures
                                 and not disabled[backend.name]
+                                # 最后一个还活着的不摘：摘了就没人干活了，
+                                # 让它继续失败也好过整轮任务停摆。
+                                and len(alive) > 1
                             ):
                                 disabled[backend.name] = True
                                 # 摘掉一个后端是运维事件，不是细节：一声不吭地少掉
@@ -157,4 +197,10 @@ class TranslationBackendPool:
                 return BackendResult(item=item, ok=True, value=value, backend_name=backend.name)
             except Exception as exc:
                 last_error = str(exc)
-        return BackendResult(item=item, ok=False, error=last_error, backend_name=backend.name)
+        return BackendResult(
+            item=item,
+            ok=False,
+            error=last_error,
+            backend_name=backend.name,
+            backend_fault=is_backend_fault(last_error),
+        )

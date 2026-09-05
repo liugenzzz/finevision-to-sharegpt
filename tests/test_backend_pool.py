@@ -67,7 +67,7 @@ def test_backend_pool_disables_backend_after_consecutive_failures():
     def handler(item, client, timeout):
         calls.append((item, client))
         if client == "bad":
-            raise RuntimeError("bad backend")
+            raise RuntimeError("[Errno 111] Connection refused")
         return {"id": item, "client": client}
 
     results = list(pool.map_unordered(["one", "two", "three"], handler))
@@ -126,12 +126,11 @@ def test_backend_pool_streams_items_without_consuming_entire_iterable_before_yie
 # -- 全部后端挂掉 ------------------------------------------------------------
 
 
-def test_losing_every_backend_raises_instead_of_ending_quietly():
-    """最坏的失败方式是看起来成功了。
+def test_the_last_backend_is_never_disabled():
+    """全部不可达时也要把任务跑完（并全部记为失败），而不是停摆。
 
-    后端被摘光之后工作线程全部退出，队列里剩下的任务无人认领，生成器就这么
-    正常结束——调用方拿到一份局部结果，打印出来和跑完一模一样。十几天的任务
-    里这种"静悄悄的半截"比直接报错难查得多。
+    摘掉最后一个后端等于让整轮任务原地死亡，而失败的样本本来就会进
+    failed.jsonl、之后可以单独重试。停摆比失败贵得多。
     """
 
     config = BackendPoolConfig(
@@ -144,10 +143,12 @@ def test_losing_every_backend_raises_instead_of_ending_quietly():
     pool = TranslationBackendPool(config, client_factory=lambda backend: object())
 
     def always_fails(item, client, timeout):
-        raise RuntimeError("backend is down")
+        raise RuntimeError("[Errno 111] Connection refused")
 
-    with pytest.raises(RuntimeError, match="every backend was disabled"):
-        list(pool.map_unordered(range(50), always_fails))
+    results = list(pool.map_unordered(range(50), always_fails))
+
+    assert len(results) == 50           # 每一条都被尝试过
+    assert not any(result.ok for result in results)
 
 
 def test_one_dead_backend_does_not_stop_a_run(capsys):
@@ -163,7 +164,7 @@ def test_one_dead_backend_does_not_stop_a_run(capsys):
 
     def handler(item, client, timeout):
         if client == "dead":
-            raise RuntimeError("backend is down")
+            raise RuntimeError("[Errno 111] Connection refused")
         return item * 2
 
     results = list(pool.map_unordered(range(20), handler))
@@ -210,19 +211,78 @@ def test_a_complete_run_does_not_raise():
 
 
 def test_the_error_says_how_many_items_were_never_attempted():
+    """真正停摆时（worker 构造就崩）要说清楚有多少条从未被尝试过。"""
+
+    config = BackendPoolConfig(
+        backends=[BackendSpec("a", "http://a", "m", "sk", concurrency=2)],
+        request_timeout=1,
+        max_retries=0,
+    )
+
+    def explode(backend):
+        raise ValueError("api_base is nonsense")
+
+    pool = TranslationBackendPool(config, client_factory=explode)
+
+    with pytest.raises(RuntimeError, match="item\\(s\\) were never attempted"):
+        list(pool.map_unordered(range(100), lambda *a: None))
+
+
+# -- 什么才算"后端坏了" -------------------------------------------------------
+
+
+def test_timeouts_never_disable_a_backend():
+    """高并发下响应慢、或者撞上一串长对话，健康的后端也会连续超时几十次。
+
+    按次数摘后端，摘掉的往往是好的——现场六个后端就是这么全被摘光、
+    整轮任务停摆的。
+    """
+
+    config = BackendPoolConfig(
+        backends=[BackendSpec("a", "http://a", "m", "sk", concurrency=1),
+                  BackendSpec("b", "http://b", "m", "sk", concurrency=1)],
+        request_timeout=1,
+        max_retries=0,
+        disable_backend_after_failures=2,
+    )
+    pool = TranslationBackendPool(config, client_factory=lambda backend: object())
+
+    def always_times_out(item, client, timeout):
+        raise RuntimeError("ReadTimeout: timed out waiting for response")
+
+    results = list(pool.map_unordered(range(60), always_times_out))
+
+    assert len(results) == 60
+    assert not any(result.backend_fault for result in results)
+
+
+def test_a_sample_the_model_could_not_translate_is_not_a_backend_fault():
     config = BackendPoolConfig(
         backends=[BackendSpec("a", "http://a", "m", "sk", concurrency=1)],
         request_timeout=1,
         max_retries=0,
-        disable_backend_after_failures=1,
+        disable_backend_after_failures=2,
     )
     pool = TranslationBackendPool(config, client_factory=lambda backend: object())
 
-    def always_fails(item, client, timeout):
-        raise RuntimeError("down")
+    def hard_sample(item, client, timeout):
+        raise RuntimeError("not_json -> fallback: 39 turns exceeds the fallback cap of 12")
 
-    with pytest.raises(RuntimeError, match="item\\(s\\) were never attempted"):
-        list(pool.map_unordered(range(100), always_fails))
+    results = list(pool.map_unordered(range(30), hard_sample))
+
+    assert len(results) == 30
+    assert not any(result.backend_fault for result in results)
+
+
+def test_unreachable_and_unauthorized_do_count_as_backend_faults():
+    from finevision_to_sharegpt.backend_pool import is_backend_fault
+
+    assert is_backend_fault("[Errno 111] Connection refused")
+    assert is_backend_fault("HTTP 401 Unauthorized")
+    assert is_backend_fault("The model `Qwen3.6-27B` does not exist.")
+    assert not is_backend_fault("ReadTimeout")
+    assert not is_backend_fault("HTTP 503 Service Unavailable")
+    assert not is_backend_fault(None)
 
 
 def test_duplicate_backend_names_are_rejected_at_load(tmp_path):
