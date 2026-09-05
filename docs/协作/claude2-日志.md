@@ -127,6 +127,40 @@ registry，被拒的连原因带列名一起打印。
 
 ---
 
+## 2026-09-04 · 重名后端在加载时拒绝；「全挂」的判断按实际跟踪数比
+
+**动了**：`config_loader.py`（**共有，按约定声明**）、`backend_pool.py`、
+`tests/test_backend_pool.py`
+
+**为什么**：用户报「改完跑都跑不了」，报错是
+`workers stopped before the queue was drained. at least 1536 item(s) never attempted`。
+1536 是线索——队列上限是 `worker_count × 4`，1536 = 384 × 4 = 6 个后端 × 64。
+照这个形状复现，发现两件事：
+
+**① 报错是对的，不是这次改动造成的。** 六个后端全部失败到被摘光，任务真的
+提前停了。**以前它也是这么停的**，只是静悄悄打印统计假装跑完（那两次 31/166
+就是）。改动只是让它喊出来了。
+
+**② 但报错走错了分支，暴露一个真缺陷：用户的配置里有重名后端。**
+`failures` 和 `disabled` 都按 `name` 索引，重名的两个条目**共用一格计数器**——
+一个坏了另一个跟着被摘，日志里只出现一个名字。而 `len(dead) == len(backends)`
+拿 5 个不同名字去比 6 个条目，永远不成立，于是落到最模糊的那句
+"workers stopped before the queue was drained"。合并配置时很容易撞上这个。
+
+改了两处：`load_backend_config` 直接拒绝重名并列出是哪个；
+「是不是全挂了」改成按实际跟踪的后端数比，措辞不再失真。
+
+**对另一侧的影响**：`load_backend_config` **现在会对重名的配置抛 ValueError**。
+你要是有脚本构造后端配置，重名的会开始报错——这是有意的，以前是静默共用状态。
+
+**验证**：248 passed / 25 skipped，ruff 干净。复现脚本确认修复后走的是
+"every backend was disabled after 20 consecutive failures (a, b, c, d, e)"。
+
+**根因仍未解决**：为什么六个后端会全部连续失败 20 次。这不是池子的问题，
+需要现场看 `[warn] backend ... disabled` 那行带的 `last error`。
+
+---
+
 ## 2026-09-04 · 完成判据改成「进队列的都被尝试过」，堵住剩下的静默退出
 
 **动了**：`src/finevision_to_sharegpt/backend_pool.py`、`tests/test_backend_pool.py`

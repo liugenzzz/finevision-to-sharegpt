@@ -131,7 +131,7 @@ class TranslationBackendPool:
                 f"every backend was disabled after "
                 f"{self.config.disable_backend_after_failures} consecutive failures "
                 f"({', '.join(dead)})"
-                if dead and len(dead) == len(self.config.backends)
+                if dead and len(dead) == len(disabled)
                 else f"{len(worker_errors)} worker(s) died: {first_error!r}"
                 if first_error is not None
                 else "workers stopped before the queue was drained"

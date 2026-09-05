@@ -223,3 +223,27 @@ def test_the_error_says_how_many_items_were_never_attempted():
 
     with pytest.raises(RuntimeError, match="item\\(s\\) were never attempted"):
         list(pool.map_unordered(range(100), always_fails))
+
+
+def test_duplicate_backend_names_are_rejected_at_load(tmp_path):
+    """重名的两个条目会共用失败计数：一个坏了另一个跟着被摘，日志里只有一个名字。"""
+
+    import json
+
+    from finevision_to_sharegpt.config_loader import load_backend_config
+
+    path = tmp_path / "backends.json"
+    path.write_text(
+        json.dumps(
+            {
+                "backends": [
+                    {"name": "vllm", "api_base": "http://a", "model": "m"},
+                    {"name": "vllm", "api_base": "http://b", "model": "m"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="backend names must be unique; vllm"):
+        load_backend_config(path)

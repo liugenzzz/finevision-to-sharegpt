@@ -99,6 +99,16 @@ def load_backend_config(path: Path | str) -> BackendPoolConfig:
     ]
     if not backends:
         raise ValueError("backend config must include at least one backend")
+    # 失败计数和停用状态都按 name 索引，重名的两个条目会共用一格：一个坏了
+    # 另一个跟着被摘，而日志里只出现一个名字。合并配置时很容易撞上。
+    seen: dict[str, int] = {}
+    for backend in backends:
+        seen[backend.name] = seen.get(backend.name, 0) + 1
+    duplicates = sorted(name for name, count in seen.items() if count > 1)
+    if duplicates:
+        raise ValueError(
+            f"backend names must be unique; {', '.join(duplicates)} appear more than once"
+        )
     return BackendPoolConfig(
         backends=backends,
         request_timeout=int(data.get("request_timeout", 120)),
