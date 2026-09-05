@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .db.config import MysqlConfig, load_mysql_config
+from .db.config import MysqlConfig, expand_env, load_mysql_config
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,8 @@ def load_backend_config(path: Path | str) -> BackendPoolConfig:
             name=str(item["name"]),
             api_base=str(item["api_base"]),
             model=str(item["model"]),
-            api_key=str(item.get("api_key", "sk-local")),
+            # ${VAR} 展开：真 key 不该进版本库。
+            api_key=expand_env(item.get("api_key", "sk-local"), context="backend"),
             concurrency=max(1, int(item.get("concurrency", 1))),
             weight=float(item.get("weight", 1)),
             extra_body=dict(item["extra_body"]) if item.get("extra_body") else None,

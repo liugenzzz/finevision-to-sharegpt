@@ -160,3 +160,60 @@ def test_load_zip_task_config_parses_flat_fields_and_dataset_overrides(tmp_path)
     assert config.chinese_ratio == 0.7
     assert config.seed == 99
     assert config.limit_per_dataset == 100
+
+
+def test_backend_api_keys_expand_environment_variables(tmp_path, monkeypatch):
+    """真 key 不该进版本库，和 MySQL 密码走同一套 ${VAR} 展开。"""
+
+    import json
+
+    from finevision_to_sharegpt.config_loader import load_backend_config
+
+    monkeypatch.setenv("FV_TEST_BACKEND_KEY", "sk-secret")
+    path = tmp_path / "backends.json"
+    path.write_text(
+        json.dumps(
+            {
+                "backends": [
+                    {
+                        "name": "remote",
+                        "api_base": "http://x/v1/chat/completions",
+                        "model": "m",
+                        "api_key": "${FV_TEST_BACKEND_KEY}",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_backend_config(path).backends[0].api_key == "sk-secret"
+
+
+def test_a_missing_backend_key_says_which_config_to_look_in(tmp_path, monkeypatch):
+    import json
+
+    import pytest
+
+    from finevision_to_sharegpt.config_loader import load_backend_config
+
+    monkeypatch.delenv("FV_TEST_ABSENT_KEY", raising=False)
+    path = tmp_path / "backends.json"
+    path.write_text(
+        json.dumps(
+            {
+                "backends": [
+                    {
+                        "name": "remote",
+                        "api_base": "http://x/v1/chat/completions",
+                        "model": "m",
+                        "api_key": "${FV_TEST_ABSENT_KEY}",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="referenced by backend config"):
+        load_backend_config(path)

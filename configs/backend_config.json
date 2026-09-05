@@ -1,5 +1,5 @@
 {
-  "_comment": "翻译后端池。model 是实例的 --served-model-name；api_base 必须是完整的 /v1/chat/completions，只写到 /v1 会 404。调度只看 concurrency：每个后端起这么多线程，从同一个队列抢任务，快的后端自然抢得多（weight 留着兼容，不参与调度）。concurrency 要对齐服务端**真能同时跑**的条数（看 vLLM 日志的 Running: N），不是 --max-num-seqs 那个上限——多出来的只在服务端排队，不增加吞吐却拖长墙上时间。request_timeout 给到 300 是因为回退现在独立设了上限：不设上限时它是「每句一次调用 × 句数不限」，300 秒的单次超时会被放大成几小时；现在 fallback_budget_seconds 管整条样本的回退总时长、fallback_max_turns 让过长的对话根本不进回退，单次超时就可以放宽到真正需要的长度。反过来说超时不能设太短：整段翻译超时会退化成逐句，一条样本从 1 次调用变成十几次，负载翻几倍、排队更长、更多超时——实测把它降到 60 秒时 86% 的样本都在走回退。",
+  "_comment": "翻译后端池。model 是实例的 --served-model-name；api_base 必须是完整的 /v1/chat/completions，只写到 /v1 会 404。name 必须唯一——失败计数和停用状态都按它索引，重名的两个条目会共用一格，一个坏了另一个跟着被摘，日志里还只出现一个名字（加载时现在会直接拒绝）。调度只看 concurrency：每个后端起这么多线程，从同一个队列抢任务，快的后端自然抢得多（weight 留着兼容，不参与调度）。concurrency 对齐服务端真能同时跑的条数（看 vLLM 日志的 Running: N），不是 --max-num-seqs 那个上限。远端的 api_key 走 ${环境变量}，真 key 不进版本库。三个时间上限：request_timeout 管单次调用；整段解析失败会退化成逐句翻，fallback_budget_seconds 管这条样本在回退上总共能花多久，fallback_max_turns 让过长的对话根本不进回退。超时不能设太短：整段超时会退化成逐句，一条样本从 1 次调用变成十几次，负载翻几倍、排队更长、更多超时——实测降到 60 秒时 86% 的样本都在走回退。disable_backend_after_failures 只对「后端本身用不了」的错误计数（连不上 / 401 / 404 / 模型名不对），超时和难样本不计入，最后一个后端永不摘。",
   "request_timeout": 300,
   "max_retries": 2,
   "disable_backend_after_failures": 20,
@@ -49,11 +49,36 @@
       }
     },
     {
-      "name": "vllm-8004",
-      "_gpu": "GPU 6,7",
-      "api_base": "http://127.0.0.1:8004/v1/chat/completions",
+      "name": "zjlab-27b-a",
+      "api_base": "http://jb-aionlineinferenceservice-161248564342717824-8000-nhss-job.z2120.nhss.zhejianglab.com:31080/v1/chat/completions",
       "model": "Qwen3.8-27B",
-      "api_key": "local-pool-key",
+      "api_key": "${FV_ZJLAB_KEY_27B_A}",
+      "concurrency": 64,
+      "weight": 1,
+      "extra_body": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
+    },
+    {
+      "name": "zjlab-122b",
+      "api_base": "http://jb-aionlineinferenceservice-161249674027102080-8000-nhss-job.z2120.nhss.zhejianglab.com:31080/v1/chat/completions",
+      "model": "Qwen3.5-122B-A10B",
+      "api_key": "${FV_ZJLAB_KEY_122B}",
+      "concurrency": 64,
+      "weight": 1,
+      "extra_body": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
+    },
+    {
+      "name": "zjlab-27b-b",
+      "api_base": "http://jb-aionlineinferenceservice-161666866205977152-8000-nhss-job.z2120.nhss.zhejianglab.com:31080/v1/chat/completions",
+      "model": "Qwen3.8-27B",
+      "api_key": "${FV_ZJLAB_KEY_27B_B}",
       "concurrency": 64,
       "weight": 1,
       "extra_body": {

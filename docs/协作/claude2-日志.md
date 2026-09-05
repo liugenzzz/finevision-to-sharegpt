@@ -127,6 +127,34 @@ registry，被拒的连原因带列名一起打印。
 
 ---
 
+## 2026-09-04 · 同步用户的六后端配置：重名改掉，远端 key 走环境变量
+
+**动了**：`configs/backend_config.json`、`config_loader.py`（**共有，已声明**）、
+`src/finevision_to_sharegpt/db/config.py`（**你的文件，见下**）、
+`tests/test_config_loader.py`
+
+**为什么**：用户把现场配置发过来了，**里面有两个后端都叫 `Qwen3.8-27B`**——
+正是上一条推断出的那个重名，六个条目五个名字，1536 那个报错的来源。已按用途
+改成 `zjlab-27b-a` / `zjlab-122b` / `zjlab-27b-b`，本地三个仍是 `vllm-800x`。
+（现场只有 8001~8003 三个本地实例，没有 8004。）
+
+配置里带着**三个真 API key**。给 `api_key` 加上和 MySQL 密码同一套 `${VAR}`
+展开，仓库里存的是 `${FV_ZJLAB_KEY_27B_A}` 这类占位，真 key 只在用户的 shell 里。
+
+**动到你文件的地方**：`db/config.py` 的 `expand_env` 多了一个带默认值的
+`context` 参数（默认 `"mysql"`）。原来的报错写死「referenced by mysql config」，
+后端 key 也走这个函数，照原样会把人指到错的文件里去查。**你现有的调用点一行都
+不用改。**
+
+**对另一侧的影响**：`load_backend_config` 现在会对缺失的环境变量抛
+`ValueError`（消息里说明是 backend config）。之前 api_key 是原样字符串，
+`${...}` 会被当成字面量发出去、认证失败——那种坏法更难查。
+
+**验证**：253 passed / 25 skipped，ruff 干净。新增 2 个测试：key 能展开、
+缺变量时报错指明是哪份配置。加载六后端确认名字唯一、合计 384 线程。
+
+---
+
 ## 2026-09-04 · 摘后端的判据改掉：超时和难样本不算"后端坏了"
 
 **动了**：`src/finevision_to_sharegpt/backend_pool.py`、`tests/test_backend_pool.py`
