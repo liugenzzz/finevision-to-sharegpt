@@ -41,13 +41,25 @@ class TranslationBackendPool:
         sentinel = object()
         result_sentinel = object()
 
+        # 进了队列的每一条都必须被某个 worker 尝试过。这两个计数是本方法唯一
+        # 可靠的完成判据——后端被摘光、client_factory 构造就抛、worker 被别的
+        # 异常打死，三种情况下线程都会照常放下哨兵、循环照常凑满、生成器照常
+        # 返回，区别只在于产出是局部的还是空的。数一数就能把它们全认出来。
+        produced = 0
+        consumed = 0
+        worker_errors: list[BaseException] = []
+
         def produce() -> None:
+            nonlocal produced
             for item in items:
                 work_queue.put(item)
+                with state_lock:
+                    produced += 1
             for _ in range(worker_count):
                 work_queue.put(sentinel)
 
         def worker(backend: BackendSpec) -> None:
+            nonlocal consumed
             try:
                 client = self.client_factory(backend)
                 while True:
@@ -57,6 +69,8 @@ class TranslationBackendPool:
                     item = work_queue.get()
                     if item is sentinel:
                         return
+                    with state_lock:
+                        consumed += 1
                     result = self._run_with_retries(item, backend, client, handler)
                     if result.ok:
                         with state_lock:
@@ -80,6 +94,9 @@ class TranslationBackendPool:
                                     flush=True,
                                 )
                     result_queue.put(result)
+            except BaseException as exc:  # noqa: BLE001 - 记下来，最后一起报
+                with state_lock:
+                    worker_errors.append(exc)
             finally:
                 result_queue.put(result_sentinel)
 
@@ -104,17 +121,25 @@ class TranslationBackendPool:
         for thread in threads:
             thread.join(timeout=1)
 
-        # 每个后端都被摘掉之后，工作线程会全部退出，队列里剩下的任务无人认领，
-        # 而这个生成器就这么正常结束了——调用方拿到一份局部结果，打印出来和
-        # 跑完一模一样。十几天的任务里这是最坏的失败方式：看起来成功了。
         with state_lock:
-            dead = [name for name, off in disabled.items() if off]
-        if dead and len(dead) == len(self.config.backends):
-            raise RuntimeError(
-                "every backend was disabled after "
+            dead = sorted(name for name, off in disabled.items() if off)
+            missed = produced - consumed
+            first_error = worker_errors[0] if worker_errors else None
+        # 生产者还活着说明它卡在 put 上：worker 全没了，队列再也不会被取空。
+        if producer_thread.is_alive() or missed > 0:
+            reason = (
+                f"every backend was disabled after "
                 f"{self.config.disable_backend_after_failures} consecutive failures "
-                f"({', '.join(sorted(dead))}); the run stopped early and the remaining "
-                "items were never attempted"
+                f"({', '.join(dead)})"
+                if dead and len(dead) == len(self.config.backends)
+                else f"{len(worker_errors)} worker(s) died: {first_error!r}"
+                if first_error is not None
+                else "workers stopped before the queue was drained"
+            )
+            raise RuntimeError(
+                f"translation stopped early — {reason}. "
+                f"at least {max(missed, 0)} item(s) were never attempted; "
+                "the results produced so far are partial"
             )
 
     def _run_with_retries(

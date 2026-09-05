@@ -127,6 +127,31 @@ registry，被拒的连原因带列名一起打印。
 
 ---
 
+## 2026-09-04 · 完成判据改成「进队列的都被尝试过」，堵住剩下的静默退出
+
+**动了**：`src/finevision_to_sharegpt/backend_pool.py`、`tests/test_backend_pool.py`
+
+**为什么**：上一条我只堵了「后端被摘光」这一个口子，用户一句话点出还有别的。
+确实有：`client_factory` 构造就抛（api_base 写错之类）、worker 被任何别的异常
+打死——这两种情况下**没有任何后端被"摘掉"**（它们连一次调用都没发出去），
+worker 的 `finally` 照常放下哨兵，`finished_workers` 照常凑满，生成器照常返回，
+**一条都没产出**。只看 `disabled` 是发现不了的。
+
+改成数数：`produced` 由生产者累加、`consumed` 由 worker 取到真任务时累加。
+收尾时 `produced > consumed`（或生产者还卡在 `put` 上）就说明队列没被取空，
+抛错并说明**至少多少条从未被尝试过**。这个不变式同时覆盖三种情况——
+后端摘光、worker 构造失败、worker 崩溃——错误信息按现场分别措辞。
+
+worker 的异常也不再吞掉了，收集起来在报错里带上第一条。
+
+**对另一侧的影响**：没有，纯失败可见性。但同上一条：**按退出码 0 判断"这轮跑完了"
+的脚本，以前的判断本来就是错的**，现在会如实报错。
+
+**验证**：247 passed / 25 skipped，ruff 干净。新增 3 个测试：构造客户端就抛时
+报 `worker(s) died`、正常跑完 200 条不报错、报错信息里带上未尝试的条数。
+
+---
+
 ## 2026-09-04 · 后端被摘光不再静悄悄地"跑完"
 
 **动了**：`src/finevision_to_sharegpt/backend_pool.py`、`tests/test_backend_pool.py`

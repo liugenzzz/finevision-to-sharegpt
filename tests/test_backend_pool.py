@@ -171,3 +171,55 @@ def test_one_dead_backend_does_not_stop_a_run(capsys):
     assert any(result.ok for result in results)
     # 摘掉一个后端要说出来，否则少掉一半算力只表现为"变慢了"。
     assert "backend dead disabled" in capsys.readouterr().err
+
+
+def test_a_worker_that_dies_building_its_client_is_not_silent():
+    """构造客户端就抛的情况：worker 立刻死光，一条都没产出。
+
+    这时候没有任何后端被"摘掉"——它们连一次调用都没发出去过——所以只看
+    disabled 是发现不了的。判据得是「进了队列的都被尝试过」。
+    """
+
+    config = BackendPoolConfig(
+        backends=[BackendSpec("a", "http://a", "m", "sk", concurrency=2)],
+        request_timeout=1,
+        max_retries=0,
+    )
+
+    def explode(backend):
+        raise ValueError("api_base is nonsense")
+
+    pool = TranslationBackendPool(config, client_factory=explode)
+
+    with pytest.raises(RuntimeError, match="worker\\(s\\) died"):
+        list(pool.map_unordered(range(10), lambda *a: None))
+
+
+def test_a_complete_run_does_not_raise():
+    config = BackendPoolConfig(
+        backends=[BackendSpec("a", "http://a", "m", "sk", concurrency=4)],
+        request_timeout=1,
+        max_retries=0,
+    )
+    pool = TranslationBackendPool(config, client_factory=lambda backend: object())
+
+    results = list(pool.map_unordered(range(200), lambda item, client, timeout: item * 2))
+
+    assert len(results) == 200
+    assert all(result.ok for result in results)
+
+
+def test_the_error_says_how_many_items_were_never_attempted():
+    config = BackendPoolConfig(
+        backends=[BackendSpec("a", "http://a", "m", "sk", concurrency=1)],
+        request_timeout=1,
+        max_retries=0,
+        disable_backend_after_failures=1,
+    )
+    pool = TranslationBackendPool(config, client_factory=lambda backend: object())
+
+    def always_fails(item, client, timeout):
+        raise RuntimeError("down")
+
+    with pytest.raises(RuntimeError, match="item\\(s\\) were never attempted"):
+        list(pool.map_unordered(range(100), always_fails))
