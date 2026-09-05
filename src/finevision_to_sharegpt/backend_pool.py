@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import sys
 import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator
@@ -66,8 +67,18 @@ class TranslationBackendPool:
                             if (
                                 self.config.disable_backend_after_failures > 0
                                 and failures[backend.name] >= self.config.disable_backend_after_failures
+                                and not disabled[backend.name]
                             ):
                                 disabled[backend.name] = True
+                                # 摘掉一个后端是运维事件，不是细节：一声不吭地少掉
+                                # 四分之一算力，进度条上只表现为"变慢了"。
+                                print(
+                                    f"[warn] backend {backend.name} disabled after "
+                                    f"{failures[backend.name]} consecutive failures; "
+                                    f"last error: {result.error}",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
                     result_queue.put(result)
             finally:
                 result_queue.put(result_sentinel)
@@ -92,6 +103,19 @@ class TranslationBackendPool:
         producer_thread.join(timeout=1)
         for thread in threads:
             thread.join(timeout=1)
+
+        # 每个后端都被摘掉之后，工作线程会全部退出，队列里剩下的任务无人认领，
+        # 而这个生成器就这么正常结束了——调用方拿到一份局部结果，打印出来和
+        # 跑完一模一样。十几天的任务里这是最坏的失败方式：看起来成功了。
+        with state_lock:
+            dead = [name for name, off in disabled.items() if off]
+        if dead and len(dead) == len(self.config.backends):
+            raise RuntimeError(
+                "every backend was disabled after "
+                f"{self.config.disable_backend_after_failures} consecutive failures "
+                f"({', '.join(sorted(dead))}); the run stopped early and the remaining "
+                "items were never attempted"
+            )
 
     def _run_with_retries(
         self,

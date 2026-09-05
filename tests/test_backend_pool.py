@@ -1,6 +1,8 @@
 import threading
 import time
 
+import pytest
+
 from finevision_to_sharegpt.backend_pool import TranslationBackendPool
 from finevision_to_sharegpt.config_loader import BackendPoolConfig, BackendSpec
 
@@ -119,3 +121,53 @@ def test_backend_pool_streams_items_without_consuming_entire_iterable_before_yie
 
     assert first.value == 0
     assert consumed["count"] < 50
+
+
+# -- 全部后端挂掉 ------------------------------------------------------------
+
+
+def test_losing_every_backend_raises_instead_of_ending_quietly():
+    """最坏的失败方式是看起来成功了。
+
+    后端被摘光之后工作线程全部退出，队列里剩下的任务无人认领，生成器就这么
+    正常结束——调用方拿到一份局部结果，打印出来和跑完一模一样。十几天的任务
+    里这种"静悄悄的半截"比直接报错难查得多。
+    """
+
+    config = BackendPoolConfig(
+        backends=[BackendSpec("a", "http://a", "m", "sk", concurrency=1),
+                  BackendSpec("b", "http://b", "m", "sk", concurrency=1)],
+        request_timeout=1,
+        max_retries=0,
+        disable_backend_after_failures=2,
+    )
+    pool = TranslationBackendPool(config, client_factory=lambda backend: object())
+
+    def always_fails(item, client, timeout):
+        raise RuntimeError("backend is down")
+
+    with pytest.raises(RuntimeError, match="every backend was disabled"):
+        list(pool.map_unordered(range(50), always_fails))
+
+
+def test_one_dead_backend_does_not_stop_a_run(capsys):
+    config = BackendPoolConfig(
+        backends=[BackendSpec("dead", "http://d", "m", "sk", concurrency=1),
+                  BackendSpec("alive", "http://a", "m", "sk", concurrency=1)],
+        request_timeout=1,
+        max_retries=0,
+        disable_backend_after_failures=2,
+    )
+    pool = TranslationBackendPool(
+        config, client_factory=lambda backend: backend.name)
+
+    def handler(item, client, timeout):
+        if client == "dead":
+            raise RuntimeError("backend is down")
+        return item * 2
+
+    results = list(pool.map_unordered(range(20), handler))
+
+    assert any(result.ok for result in results)
+    # 摘掉一个后端要说出来，否则少掉一半算力只表现为"变慢了"。
+    assert "backend dead disabled" in capsys.readouterr().err
