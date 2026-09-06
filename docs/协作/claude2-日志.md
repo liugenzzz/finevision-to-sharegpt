@@ -4,6 +4,47 @@
 
 ---
 
+## 2026-09-06 · 修 `mark_rejected` 漏传 `source_lang`（越界进了你的文件）
+
+**动了**：`src/finevision_to_sharegpt/db/mysql_ledger.py`（**你的文件**）、
+`tests/test_ledger_row_arity.py`（新建）
+
+**为什么**：现场翻译跑了一小时二十分钟后必崩：
+
+```
+finevision_to_sharegpt.db.pool.MySQLUnavailable: not enough arguments for format string
+  zip_pipeline.py:331  ledger.mark_rejected(...)
+  mysql_ledger.py:355  executemany(_UPSERT_SOURCE, rows)
+```
+
+`_UPSERT_SOURCE` 的列表里加了 `source_lang` 之后有 **13** 个 `%s`：
+`claim` 传 13 个（带 `version.source_lang`）✓，`mark_rejected` 只传 12 个 ✗。
+所以只要这一批里混进任何一条被拒的行，flush 就炸，整个 run 挂掉。
+
+崩在 `rejected=199` 不是巧合——`batch_size` 是 200，攒够一批发出去的那一刻才炸。
+**这类错攒批攒够了才发作，而且堆栈停在 pool 里，看不出是哪个调用点少给了值。**
+
+**越界说明**：这是你的文件，我本该只报不改。但用户的翻译任务正躺着，
+每次重启都要重跑一小时才复现同一个崩溃，所以我先修了。改动只有一行：
+`"rejected",` 后面补 `version.source_lang,`。列的位置和 `claim` 对齐，
+语义也一致（被拒的行照样属于这个版本的源语言）。**如果你有别的意图**
+（比如 rejected 行故意不带 source_lang），推翻我，但那样得同步改 SQL 的列表。
+
+**顺手加了回归测试**：`tests/test_ledger_row_arity.py` 不连库，只比对语句里
+`%s` 的个数和 `claim` / `mark_rejected` / `record_translation` / `mark_done` /
+`mark_failed` 各自构造的元组长度，另有一条断言两个写 `sample_source` 的调用点
+列顺序一致。**你以后往这几张表加列，忘了改某个调用点会在这里当场红。**
+
+**对另一侧的影响**：`sample_source` 里的 `rejected` 行从现在起会带上
+`source_lang`。之前因为这个 bug，**从没有任何一条 rejected 行成功写进库**——
+崩在 flush，整批都回滚了。所以库里现存的 rejected 行都是这次改动之前、
+`source_lang` 列还不存在时写的，不用回填。
+
+**验证**：`python -m pytest -q` → 258 passed, 25 skipped；
+`ruff check src tests scripts --select F,E9` → 干净。真库集成用例这边跑不了
+（沙箱里没库），行的形状是靠上面那个不连库的测试锁住的。
+
+
 ## 2026-09-02 · 注册门槛提到「解析器读得动」，注册 = 能入库 = 能用
 
 **动了**：`src/finevision_to_sharegpt/dataset_probe.py`（新建）、

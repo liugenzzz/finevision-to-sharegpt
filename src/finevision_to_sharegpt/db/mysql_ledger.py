@@ -363,6 +363,7 @@ class MySQLLedger(ConsumptionLedger):
                 None,
                 0,
                 "rejected",
+                version.source_lang,
                 (reason or "")[:255] or None,
                 self.batch_id,
                 self.config.claim_ttl_seconds,
