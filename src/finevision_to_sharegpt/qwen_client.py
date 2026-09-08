@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from .image_store import detect_image_extension
+from .models import ContextOverflow, TruncatedResponse
 
 
 MIME_BY_EXT = {
@@ -61,14 +62,25 @@ class QwenClient:
             json=payload,
             timeout=timeout,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            _raise_with_server_reason(response, exc)
         data = response.json()
         try:
-            content = data["choices"][0]["message"]["content"]
+            choice = data["choices"][0]
+            content = choice["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError("model response did not include message content") from exc
         if not isinstance(content, str):
             raise ValueError("model response did not include message content")
+        # 到顶截断是 HTTP 200，content 是半截的：不在这里认出来，下游只会看到
+        # "不是合法 JSON"，然后一路回退到逐句翻，而真正的原因是窗口不够。
+        if choice.get("finish_reason") == "length":
+            raise TruncatedResponse(
+                f"response hit the token ceiling (finish_reason=length) "
+                f"after {len(content)} chars; the window has no room for the translation"
+            )
         return content
 
 
@@ -83,3 +95,33 @@ def _as_image_list(image_bytes: bytes | list[bytes]) -> list[bytes]:
     if isinstance(image_bytes, list):
         return image_bytes
     return [image_bytes]
+
+
+# vLLM 超长时的 400 body 长这样：
+# {"object":"error","message":"This model's maximum context length is 32768
+#  tokens. However, you requested 41207 tokens ...","type":"BadRequestError"}
+_OVERFLOW_MARKERS = ("maximum context length", "longer than the maximum", "max_model_len")
+
+
+def _raise_with_server_reason(response: Any, original: Exception) -> None:
+    """把服务端说的原因带出来，而不是只带一个状态码。
+
+    httpx 的 raise_for_status() 只给 "Client error '400 Bad Request' for url ..."，
+    body 里那句 "maximum context length is 32768 tokens" 一个字都不会出现。
+    上层于是只能看到一个光秃秃的 400，既不知道是超长还是别的，也就没法分开统计——
+    现场就是因此花了很久才定位到「长多轮把窗口打爆」。
+    """
+
+    detail = ""
+    try:
+        body = response.json()
+        if isinstance(body, dict):
+            detail = body.get("message") or body.get("error") or ""
+            if isinstance(detail, dict):
+                detail = detail.get("message") or str(detail)
+    except Exception:
+        detail = ""
+    detail = (str(detail).strip() or str(getattr(response, "text", "")).strip())[:500]
+    if any(marker in detail.lower() for marker in _OVERFLOW_MARKERS):
+        raise ContextOverflow(detail) from original
+    raise ValueError(f"{original} | {detail}" if detail else str(original)) from original

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .models import SourceSample, TranslationResult
+from .models import ContextOverflow, SourceSample, TranslationResult, TruncatedResponse
 
 
 DEFAULT_SAMPLE_PROMPT = """你是一名专业的多模态数据集翻译与标注助手。请将 FineVision 数据集样本中的英文对话内容翻译为中文，并输出严格 JSON。随附的图片仅作为辅助理解的上下文。
@@ -216,6 +216,12 @@ def _parse_conversations(response: str, sample: SourceSample) -> list[dict[str, 
 def failure_code(error: BaseException) -> str:
     """One short, groupable label for whatever went wrong."""
 
+    if isinstance(error, ContextOverflow):
+        # 窗口装不下。重试和换后端都没用，只有拆小或者放弃。
+        return "context_overflow"
+    if isinstance(error, TruncatedResponse):
+        # 装得下提示词，装不下译文。翻译的输出长度约等于输入。
+        return "truncated"
     if isinstance(error, ParseFailure):
         return error.code
     name = type(error).__name__

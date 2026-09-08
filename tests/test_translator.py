@@ -329,3 +329,60 @@ def test_a_truncated_turn_list_is_told_apart_from_bad_json():
     translate_sample(client, source_sample(), ["a.jpg"], on_fallback=lambda code, turns: seen.append(code))
 
     assert seen == ["too_few_turns"]
+
+
+# -- 窗口装不下的两种形态 ----------------------------------------------------
+
+
+def test_a_context_overflow_carries_the_reason_the_server_gave():
+    """服务端 400 的 body 里写着原因，httpx 的默认异常一个字都不带。"""
+
+    import httpx
+
+    from finevision_to_sharegpt.models import ContextOverflow
+    from finevision_to_sharegpt.qwen_client import QwenClient
+
+    message = ("This model's maximum context length is 32768 tokens. "
+               "However, you requested 41207 tokens.")
+
+    def transport(request):
+        return httpx.Response(400, json={"object": "error", "message": message})
+
+    client = QwenClient("http://x/v1/chat/completions", "sk", "m",
+                        http_client=httpx.Client(transport=httpx.MockTransport(transport)))
+
+    with pytest.raises(ContextOverflow) as excinfo:
+        client.chat("hi", b"img")
+
+    assert "maximum context length is 32768" in str(excinfo.value)
+
+
+def test_a_truncated_reply_is_not_reported_as_bad_json():
+    """finish_reason=length 是 HTTP 200 加半截 JSON，最容易被当成模型不听话。"""
+
+    import httpx
+
+    from finevision_to_sharegpt.models import TruncatedResponse
+    from finevision_to_sharegpt.qwen_client import QwenClient
+
+    def transport(request):
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": "length",
+            "message": {"content": '{"conversations": [{"from": "human", "value": "半截'},
+        }]})
+
+    client = QwenClient("http://x/v1/chat/completions", "sk", "m",
+                        http_client=httpx.Client(transport=httpx.MockTransport(transport)))
+
+    with pytest.raises(TruncatedResponse):
+        client.chat("hi", b"img")
+
+
+def test_the_two_window_failures_get_their_own_codes():
+    """两者都要能在 fallback.jsonl 里单独数出来，否则查不出「为什么在回退」。"""
+
+    from finevision_to_sharegpt.models import ContextOverflow, TruncatedResponse
+    from finevision_to_sharegpt.translator import failure_code
+
+    assert failure_code(ContextOverflow("too long")) == "context_overflow"
+    assert failure_code(TruncatedResponse("cut off")) == "truncated"

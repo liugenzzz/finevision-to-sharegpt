@@ -4,6 +4,24 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+class ContextOverflow(ValueError):
+    """请求的 token 数超过了实例的 max_model_len，服务端 400 拒收。
+
+    单独立一个类型是因为它和别的失败**处理方式完全不同**：超时可以重试、
+    解析失败可以回退，而这条样本无论重试多少次、换哪个后端都一样超——
+    唯一的出路是把它拆小或者放弃。
+    """
+
+
+class TruncatedResponse(ValueError):
+    """服务端 finish_reason=length：话没说完就到顶了。
+
+    这个最阴——HTTP 200，content 里是一段**看起来正常但缺了后半截**的 JSON。
+    解析失败后只会报"不是合法 JSON"，没人知道真正的原因是窗口不够写下译文。
+    翻译任务的输出长度约等于输入，所以提示词占到窗口一半就会踩到它。
+    """
+
+
 @dataclass(frozen=True)
 class SourceTurn:
     role: str
