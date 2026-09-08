@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import sys
 import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator
@@ -15,6 +16,39 @@ class BackendResult:
     value: Any = None
     error: str | None = None
     backend_name: str | None = None
+    # 这一条失败是不是"后端本身不可用"。见 is_backend_fault。
+    backend_fault: bool = False
+
+
+# 只有这些说明后端本身用不了：连不上、认证不过、模型名不对。其余——超时、
+# 5xx 过载、译文解析不了——都是"这条任务没成"，跟后端健康与否无关。
+# 高并发下响应慢，或者撞上一串长对话，健康的后端照样会连续失败几十次；
+# 按失败次数摘后端，摘掉的往往是好的。
+_BACKEND_FAULT_MARKERS = (
+    "connect",
+    "connection refused",
+    "name or service not known",
+    "nodename nor servname",
+    "ssl",
+    "401",
+    "403",
+    "404",
+    "unauthorized",
+    "forbidden",
+    "does not exist",
+    "invalid api key",
+)
+
+
+def is_backend_fault(error: str | None) -> bool:
+    """这条失败是否说明后端本身用不了，而不只是这条任务没成。"""
+
+    if not error:
+        return False
+    text = error.lower()
+    if "timeout" in text or "timed out" in text:
+        return False
+    return any(marker in text for marker in _BACKEND_FAULT_MARKERS)
 
 
 class TranslationBackendPool:
@@ -40,13 +74,25 @@ class TranslationBackendPool:
         sentinel = object()
         result_sentinel = object()
 
+        # 进了队列的每一条都必须被某个 worker 尝试过。这两个计数是本方法唯一
+        # 可靠的完成判据——后端被摘光、client_factory 构造就抛、worker 被别的
+        # 异常打死，三种情况下线程都会照常放下哨兵、循环照常凑满、生成器照常
+        # 返回，区别只在于产出是局部的还是空的。数一数就能把它们全认出来。
+        produced = 0
+        consumed = 0
+        worker_errors: list[BaseException] = []
+
         def produce() -> None:
+            nonlocal produced
             for item in items:
                 work_queue.put(item)
+                with state_lock:
+                    produced += 1
             for _ in range(worker_count):
                 work_queue.put(sentinel)
 
         def worker(backend: BackendSpec) -> None:
+            nonlocal consumed
             try:
                 client = self.client_factory(backend)
                 while True:
@@ -56,19 +102,41 @@ class TranslationBackendPool:
                     item = work_queue.get()
                     if item is sentinel:
                         return
+                    with state_lock:
+                        consumed += 1
                     result = self._run_with_retries(item, backend, client, handler)
                     if result.ok:
                         with state_lock:
                             failures[backend.name] = 0
+                    elif not result.backend_fault:
+                        # 任务失败不计入停用：超时和难样本不是后端的错。
+                        pass
                     else:
                         with state_lock:
                             failures[backend.name] += 1
+                            alive = [n for n, off in disabled.items() if not off]
                             if (
                                 self.config.disable_backend_after_failures > 0
                                 and failures[backend.name] >= self.config.disable_backend_after_failures
+                                and not disabled[backend.name]
+                                # 最后一个还活着的不摘：摘了就没人干活了，
+                                # 让它继续失败也好过整轮任务停摆。
+                                and len(alive) > 1
                             ):
                                 disabled[backend.name] = True
+                                # 摘掉一个后端是运维事件，不是细节：一声不吭地少掉
+                                # 四分之一算力，进度条上只表现为"变慢了"。
+                                print(
+                                    f"[warn] backend {backend.name} disabled after "
+                                    f"{failures[backend.name]} consecutive failures; "
+                                    f"last error: {result.error}",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
                     result_queue.put(result)
+            except BaseException as exc:  # noqa: BLE001 - 记下来，最后一起报
+                with state_lock:
+                    worker_errors.append(exc)
             finally:
                 result_queue.put(result_sentinel)
 
@@ -93,6 +161,27 @@ class TranslationBackendPool:
         for thread in threads:
             thread.join(timeout=1)
 
+        with state_lock:
+            dead = sorted(name for name, off in disabled.items() if off)
+            missed = produced - consumed
+            first_error = worker_errors[0] if worker_errors else None
+        # 生产者还活着说明它卡在 put 上：worker 全没了，队列再也不会被取空。
+        if producer_thread.is_alive() or missed > 0:
+            reason = (
+                f"every backend was disabled after "
+                f"{self.config.disable_backend_after_failures} consecutive failures "
+                f"({', '.join(dead)})"
+                if dead and len(dead) == len(disabled)
+                else f"{len(worker_errors)} worker(s) died: {first_error!r}"
+                if first_error is not None
+                else "workers stopped before the queue was drained"
+            )
+            raise RuntimeError(
+                f"translation stopped early — {reason}. "
+                f"at least {max(missed, 0)} item(s) were never attempted; "
+                "the results produced so far are partial"
+            )
+
     def _run_with_retries(
         self,
         item: Any,
@@ -108,4 +197,10 @@ class TranslationBackendPool:
                 return BackendResult(item=item, ok=True, value=value, backend_name=backend.name)
             except Exception as exc:
                 last_error = str(exc)
-        return BackendResult(item=item, ok=False, error=last_error, backend_name=backend.name)
+        return BackendResult(
+            item=item,
+            ok=False,
+            error=last_error,
+            backend_name=backend.name,
+            backend_fault=is_backend_fault(last_error),
+        )

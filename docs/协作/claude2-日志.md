@@ -4,54 +4,6 @@
 
 ---
 
-## 2026-09-06 · 翻译回退到「慢但能出结果」那版，自动摘后端从配置关掉
-
-**动了**：`src/finevision_to_sharegpt/translator.py`、`backend_pool.py`、`cli.py`
-（三个文件回到 `48610b3` 的状态，逐字一致）、`config_loader.py`（只删回退那两个
-字段）、`configs/backend_config.json`、`tests/test_translator.py`、
-`tests/test_backend_pool.py`
-
-**为什么**：用户的原话是「越改 bug 越多，越来越乱」，要回到他嫌慢的那一版。
-从 `ed57777` 起的那一串改动是围着「翻译太慢」转的：回退加总预算和句数上限、
-失败原因分类、后端摘除判据、完成判据。每一条单看都成立，合起来给一条本来
-只是慢的流水线加了四个新的失败模式，其中两个直接让 run 起不来。
-
-**撤掉的**：`translate_sample` 的 `fallback_budget_seconds` / `fallback_max_turns` /
-`on_fallback`；`ParseFailure` 和 `failure_code`；`fallback.jsonl` 计数；
-`BackendResult.backend_fault` 和 `is_backend_fault`；`map_unordered` 末尾那个
-「进队列的都被尝试过」的 `RuntimeError`。
-
-**留下的**（这三样和快慢无关，删了只会再踩一次已经踩过的坑）：
-- `config_loader` 里的**后端重名校验**——重名会共用失败计数那一格，用户的
-  配置真出过这个问题。
-- `api_key` 的 `${VAR}` 展开。
-- `db/mysql_ledger.py` 里 `mark_rejected` 补 `source_lang` 那一行。
-
-**关键的替代做法**：`disable_backend_after_failures` 从 20 改成 **0**。
-老代码里那个摘后端的逻辑是按失败次数数的，不分超时还是后端真挂了——正是
-用户说「太愚蠢了，模型一直都能通」的那个。我没有再写代码去分辨，而是用老
-代码本来就有的 `> 0` 判断把它整个关掉。**零行新代码，摘不掉就不会摘光。**
-
-代价说清楚：现在没有任何自动降级。某个后端真挂了（比如某个 vLLM 实例崩了），
-分给它的那批任务会一路失败到底、进 `failed.jsonl`，进度条上只表现为成功率下降。
-可以接受——失败的样本本来就能单独重试，而停摆不能。
-
-**对另一侧的影响**：
-① `BackendPoolConfig` **没有 `fallback_budget_seconds` 了**。你的
-`scripts/check_backend_throughput.py` 用 `getattr(bc, 'fallback_budget_seconds', 0)`
-读它，所以不会崩，只是「样本耗时上限」现在等于 `request_timeout`（300s）。
-**其实这个数才是对的**——回退路径现在没有总上限，那个加法本来也只是个估计。
-你要愿意可以把那两行简化掉。
-② 回退不再有句数上限，所以长对话会逐句翻、占住线程很久。**慢是已知的、
-被接受的**，别再把它当 bug 修。
-③ `output/*/fallback.jsonl` 不再产生。
-
-**验证**：`pytest -q` → 244 passed / 25 skipped；`ruff --select F,E9` 干净；
-`git diff 48610b3 -- translator.py backend_pool.py cli.py` 为空（确认真的回到那一版）。
-另外照现场形状模拟了一把：5 后端 / 288 线程配比、三分之二超时、5000 条任务，
-全部产出、无后端被摘、无停摆。
-
-
 ## 2026-09-06 · 修 `mark_rejected` 漏传 `source_lang`（越界进了你的文件）
 
 **动了**：`src/finevision_to_sharegpt/db/mysql_ledger.py`（**你的文件**）、

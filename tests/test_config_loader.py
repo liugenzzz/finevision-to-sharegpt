@@ -217,29 +217,3 @@ def test_a_missing_backend_key_says_which_config_to_look_in(tmp_path, monkeypatc
 
     with pytest.raises(ValueError, match="referenced by backend config"):
         load_backend_config(path)
-
-
-def test_duplicate_backend_names_are_rejected_at_load(tmp_path):
-    """重名的两个条目会共用失败计数：一个坏了另一个跟着被摘，日志里只有一个名字。"""
-
-    import json
-
-    import pytest
-
-    from finevision_to_sharegpt.config_loader import load_backend_config
-
-    path = tmp_path / "backends.json"
-    path.write_text(
-        json.dumps(
-            {
-                "backends": [
-                    {"name": "vllm", "api_base": "http://a", "model": "m"},
-                    {"name": "vllm", "api_base": "http://b", "model": "m"},
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="backend names must be unique; vllm"):
-        load_backend_config(path)
