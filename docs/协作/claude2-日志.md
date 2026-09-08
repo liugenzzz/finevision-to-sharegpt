@@ -4,6 +4,63 @@
 
 ---
 
+## 2026-09-08 · 续跑不再为了丢掉一行而先把它解码出来（35 分钟 → 3 秒）
+
+**动了**：`src/finevision_to_sharegpt/parquet_reader.py`、`zip_pipeline.py`、
+`tests/test_parquet_reader.py`
+
+**为什么**：用户指出慢的不是启动读文件，是**跑起来之后走回断点那一段**。
+现场那一屏：
+
+```
+[coco_colors] of 166 datasets: 1%| | 2/166 [00:23<35:47, 13.09s/dataset,
+                                    failed=0, rejected=0, skipped=164555, written=0]
+```
+
+23 秒跳了 164,555 行、一条都没翻，166 个数据集 ETA 35:47。**每次重启都要先花
+半小时把已经翻完的行重走一遍。**
+
+根因：跳过与否的判据是 `sample_id`，而 `sample_id = <数据集>:<分片>:<行号>`
+——**只跟行号有关，跟行内容毫无关系**。但代码是先 `batch.to_pylist()` 把整行
+解出来（连 60 KB 的图片字节一起 materialize），再拿行号去查该不该跳。
+
+实测 1.2 GB / 20000 行的分片：解码后再丢 **5,961 行/秒**，按行号直接跳
+**4,299,425 行/秒**。现场是 7,155 行/秒，量级对得上。
+
+**改法**：`iter_parquet_rows_from` 加一个 `skip(row_index) -> bool`。整个 row group
+都要丢就**连读都不读**（省掉磁盘 I/O 和 Arrow 解码两笔）；组里只丢一部分就
+逐批再判一次（`to_pylist` 才是最贵的那步）。跳掉的行以 `(index, None)` 产出，
+**账照记**——调用点仍然 `skipped += 1`、仍然 `note_scanned` 推水位线。
+
+**这一条是关键，别优化掉**：跳过的行必须继续产出。`limit` 是总量语义、要靠
+`skipped` 补报，水位线也要靠 `note_scanned` 推进。我把「整组跳掉就 continue，
+不产出」做了变异测试，三条测试当场红，其中包括
+`test_directory_dataset_resumes_without_repeating`。
+
+**收益**（1.2 GB / 20000 行、全部已完成）：
+
+```
+改前  3.355s  →     5,961 行/秒
+改后  0.005s  → 4,299,425 行/秒     快 721 倍
+现场 ETA 35:47  →  约 3 秒
+```
+
+最坏情况（隔行完成，没有一整组能跳）实测 2.582s，与改前持平，**不会更慢**。
+
+**顺带改了一个测试的写法**：`test_iter_parquet_rows_from_skips_whole_row_groups`
+原来断言 `read_groups == [list(range(5, 10))]`，锁的是"一次调用读完剩余所有组"
+这个**调用形状**。现在按组读（这才能整组跳过），断言改成"哪几组被读过"——
+钉意图不钉实现。
+
+**对另一侧的影响**：`iter_parquet_rows_from` 的产出类型从
+`tuple[int, dict]` 变成 `tuple[int, dict | None]`。**不传 `skip` 时行为完全不变**
+（永远不会产出 None），所以 `db-scan`、`export-zips` 和你那边任何调用点都不用改。
+只有想吃到这个加速的调用点才需要传 `skip` 并处理 `None`。
+
+**验证**：`pytest -q` → 274 passed / 25 skipped；`ruff --select F,E9` 干净。
+变异测试见上。
+
+
 ## 2026-09-08 · 超长样本会把健康的后端摘掉——裸数字匹配惹的祸
 
 **动了**：`src/finevision_to_sharegpt/backend_pool.py`、`tests/test_backend_pool.py`

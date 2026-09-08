@@ -316,8 +316,17 @@ def _iter_dataset_rows(
             if plan.skipped_before:
                 totals["skipped"] += plan.skipped_before
                 dataset_stats["skipped"] += plan.skipped_before
+            # 跳过与否只看行号——sample_id 是 <数据集>:<分片>:<行号>，跟行内容
+            # 无关。交给读取器，它就能在解码前判断，整组整批地跳过去；不然
+            # 每一行都要连图片字节一起 materialize 出来再丢掉，7000 行/秒。
+            def already_done(row_index: int, _plan=plan, _version=version, _parquet=parquet) -> bool:
+                sample_id = f"{dataset.source_id}:{_parquet.name}:{row_index}"
+                return ledger.is_consumed(_version, sample_id, row_index, _plan)
+
             progress = _progress_rows(
-                iter_parquet_rows_from(parquet.path, start_row=plan.start_row),
+                iter_parquet_rows_from(
+                    parquet.path, start_row=plan.start_row, skip=already_done
+                ),
                 progress_factory,
                 parquet.path,
                 f"{description_prefix} {dataset.name}/{parquet.name}",
@@ -329,7 +338,8 @@ def _iter_dataset_rows(
                     exhausted = False
                     break
                 sample_id = f"{dataset.source_id}:{parquet.name}:{row_index}"
-                if ledger.is_consumed(version, sample_id, row_index, plan):
+                # row 是 None 就是读取器替我们跳掉的那些，账照记。
+                if row is None:
                     totals["skipped"] += 1
                     dataset_stats["skipped"] += 1
                     ledger.note_scanned(version, parquet.name, row_index)
