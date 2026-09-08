@@ -4,6 +4,53 @@
 
 ---
 
+## 2026-09-08 · 超长样本会把健康的后端摘掉——裸数字匹配惹的祸
+
+**动了**：`src/finevision_to_sharegpt/backend_pool.py`、`tests/test_backend_pool.py`
+
+**为什么**：用户问「模型端不会因为处理长样本返回错误就被摘掉吧」。会。
+
+`is_backend_fault` 把 `"401"` / `"403"` / `"404"` 当**裸子串**匹配，而超长错误里
+带着 token 数：
+
+```
+requested 40412 tokens  → 含 404
+requested 24035 tokens  → 含 403
+requested 18401 tokens  → 含 401
+```
+
+长多轮是**成片出现**的（一个数据集连着扫），凑够 20 连败很容易——四个后端会被
+一个个摘到只剩最后一个（`len(alive) > 1` 那条保底还在，所以不会归零，但算力
+掉到四分之一，进度条上只表现为"变慢了"）。**而模型其实一直都能通**，正是用户
+之前说「这个机制太愚蠢了」的那件事，只是这次是从另一个方向复发。
+
+**改法**，两道防线：
+
+① 加一张**永不算后端故障**的排除表，先判它：`timeout` / `maximum context length`
+/ `max_model_len` / `finish_reason=length` / `token ceiling`。窗口装不下是样本的
+问题，换哪个后端、重试多少次都一样超。
+
+② 故障标记里**去掉所有裸数字**，状态码靠它后面那句话认——`unauthorized` /
+`forbidden` / `not found`。同时补齐 `connection reset` / `cannot connect` /
+`no route to host`。
+
+两道是独立的：①管认得出的那几句话，②兜底管别的。测试也分开钉——
+`test_a_number_that_merely_contains_a_status_code_is_not_one` 用的两条错误
+**不带任何"超长"字样**（服务端 500 正文里的 token 数、端口号里带 403 的 URL），
+排除表救不了它们，只有②能。把裸数字加回去做变异测试，确认它会红。
+
+**对另一侧的影响**：无，不碰库也不碰账本。但如果你在诊断脚本里也做过类似的
+「按错误串判后端死活」，同一个坑值得看一眼。
+
+**验证**：`pytest -q` → 270 passed / 25 skipped；`ruff --select F,E9` 干净。
+端到端跑了一把：4 后端、500 条全部超长连着炸，四个后端一个没摘、500 条全部产出。
+
+**还没修的**（记着，不是忘了）：回退逐句翻的时候 `image_bytes=sample.image_bytes_list`
+——**每一句都把整套图片重发一遍**。39 轮 1 图是整段的 14.6 倍，39 轮 4 图是 27 倍。
+多图长样本因此会在回退路径上**再次**超长。等用户量完 `measure_sample_size.py`
+的结果再决定是顺手去掉图片，还是做分段翻译。
+
+
 ## 2026-09-08 · 重启不再整读三遍产出：21 GB / 4 分钟 → 167 次 stat
 
 **动了**：`src/finevision_to_sharegpt/zip_pipeline.py`、

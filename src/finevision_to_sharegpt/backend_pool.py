@@ -21,22 +21,40 @@ class BackendResult:
 
 
 # 只有这些说明后端本身用不了：连不上、认证不过、模型名不对。其余——超时、
-# 5xx 过载、译文解析不了——都是"这条任务没成"，跟后端健康与否无关。
+# 5xx 过载、窗口装不下、译文解析不了——都是"这条任务没成"，跟后端健康与否无关。
 # 高并发下响应慢，或者撞上一串长对话，健康的后端照样会连续失败几十次；
 # 按失败次数摘后端，摘掉的往往是好的。
+#
+# 这里**不能放裸数字**。曾经把 "401"/"403"/"404" 当子串匹配，结果超长错误里的
+# token 数就够了：requested 40412 tokens 含 404、24035 含 403、18401 含 401。
+# 长多轮是成片出现的，凑够 20 连败很容易——健康的后端会被一个个摘掉。
+# 状态码该靠它后面那句话认（unauthorized / forbidden / not found）。
 _BACKEND_FAULT_MARKERS = (
-    "connect",
     "connection refused",
+    "connection reset",
+    "cannot connect",
+    "connect call failed",
+    "no route to host",
     "name or service not known",
     "nodename nor servname",
     "ssl",
-    "401",
-    "403",
-    "404",
     "unauthorized",
     "forbidden",
+    "not found",
     "does not exist",
     "invalid api key",
+)
+
+# 这些**一定**不是后端的错，即使上面的词碰巧也出现在同一句里。先判它们。
+_NEVER_A_BACKEND_FAULT = (
+    "timeout",
+    "timed out",
+    # 窗口装不下：换哪个后端、重试多少次都一样超，是样本的问题不是后端的问题。
+    "maximum context length",
+    "context length",
+    "max_model_len",
+    "finish_reason=length",
+    "token ceiling",
 )
 
 
@@ -46,7 +64,7 @@ def is_backend_fault(error: str | None) -> bool:
     if not error:
         return False
     text = error.lower()
-    if "timeout" in text or "timed out" in text:
+    if any(marker in text for marker in _NEVER_A_BACKEND_FAULT):
         return False
     return any(marker in text for marker in _BACKEND_FAULT_MARKERS)
 

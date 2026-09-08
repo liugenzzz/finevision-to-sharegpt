@@ -274,12 +274,76 @@ def test_a_sample_the_model_could_not_translate_is_not_a_backend_fault():
     assert not any(result.backend_fault for result in results)
 
 
+def test_a_long_sample_that_blows_the_window_never_disables_a_backend():
+    """超长的错误串里带着 token 数，而 token 数里有 401/403/404。
+
+    曾经把状态码当裸子串匹配，于是 "requested 40412 tokens" 里的 404 就够了。
+    长多轮是成片出现的（一个数据集连着扫），凑够 20 连败很容易——健康的后端
+    会被一个个摘掉，而模型其实一直都能通。
+    """
+
+    from finevision_to_sharegpt.backend_pool import is_backend_fault
+
+    for requested in ("40412", "24035", "18401"):
+        error = (f"This model's maximum context length is 16384 tokens. "
+                 f"However, you requested {requested} tokens.")
+        assert not is_backend_fault(error), error
+
+    assert not is_backend_fault(
+        "truncated -> fallback: response hit the token ceiling (finish_reason=length)")
+    assert not is_backend_fault(
+        "context_overflow -> fallback: 39 turns exceeds the fallback cap of 12")
+
+
+def test_a_number_that_merely_contains_a_status_code_is_not_one():
+    """排除表只认得出它列出的那几句话，兜底得靠「状态码不当裸数字匹配」。
+
+    这两条都不带任何"超长"字样，全靠数字里碰巧有 401/403/404：
+    服务端的 500 正文带着 token 数，以及端口号本身。
+    """
+
+    from finevision_to_sharegpt.backend_pool import is_backend_fault
+
+    assert not is_backend_fault("Engine failed while processing 40412 tokens")
+    assert not is_backend_fault("upstream returned 503 after 24035 ms")
+    # 端口号里带 403 的实例，它的每一条错误都会带上这串 URL
+    assert not is_backend_fault(
+        "Server error '502 Bad Gateway' for url 'http://127.0.0.1:8403/v1/chat/completions'")
+
+
+def test_a_burst_of_overflow_errors_leaves_every_backend_enabled():
+    """端到端：整片长样本连着炸，四个后端一个都不能少。"""
+
+    config = BackendPoolConfig(
+        backends=[BackendSpec(f"b{i}", "http://x", "m", "sk", concurrency=2)
+                  for i in range(4)],
+        request_timeout=1,
+        max_retries=0,
+        disable_backend_after_failures=20,
+    )
+    pool = TranslationBackendPool(config, client_factory=lambda backend: object())
+
+    def overflows(item, client, timeout):
+        raise RuntimeError(
+            f"This model's maximum context length is 16384 tokens. "
+            f"However, you requested {40000 + item} tokens.")
+
+    results = list(pool.map_unordered(range(500), overflows))
+
+    assert len(results) == 500                       # 一条都没被丢下
+    assert not any(result.backend_fault for result in results)
+
+
 def test_unreachable_and_unauthorized_do_count_as_backend_faults():
     from finevision_to_sharegpt.backend_pool import is_backend_fault
 
     assert is_backend_fault("[Errno 111] Connection refused")
-    assert is_backend_fault("HTTP 401 Unauthorized")
+    # 状态码要靠它后面那句话认，不能靠数字本身。
+    assert is_backend_fault(
+        "Client error '401 Unauthorized' for url 'http://127.0.0.1:8001/v1/chat/completions'")
+    assert is_backend_fault("Client error '404 Not Found' for url 'http://127.0.0.1:8001/v1'")
     assert is_backend_fault("The model `Qwen3.6-27B` does not exist.")
+    assert is_backend_fault("[Errno -2] Name or service not known")
     assert not is_backend_fault("ReadTimeout")
     assert not is_backend_fault("HTTP 503 Service Unavailable")
     assert not is_backend_fault(None)
