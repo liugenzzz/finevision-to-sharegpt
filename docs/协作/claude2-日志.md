@@ -4,6 +4,71 @@
 
 ---
 
+## 2026-09-08 · 重启不再整读三遍产出：21 GB / 4 分钟 → 167 次 stat
+
+**动了**：`src/finevision_to_sharegpt/zip_pipeline.py`、
+`tests/test_zip_pipeline_startup.py`（新建）
+
+**为什么**：用户反馈「每次重启很慢」。量了一下，`_prepare_zip_run` 在翻第一条
+之前会把产出整读三遍——166 个分数据集 jsonl 一遍 + `train.jsonl` 两遍：
+
+```
+① backfill 读 166 个分数据集文件   3.56s
+② backfill 读 train.jsonl         3.28s   （追加 0 条）
+③ load_completed_ids 再读一遍      3.68s
+                       合计 10.52s / 读 844 MB   ← 才 20 万条
+```
+
+外推到 500 万条：**读 21 GB、耗时 4 分钟、内存 627 MB**，而且产出在网络盘上。
+
+**三遍全是白读的**：
+
+- **①② 是一次性迁移，却每次重启都跑。** `_write_record` 一直是同时往
+  `train.jsonl` 和分数据集文件写的，所以稳态下 backfill 读完几百 MB 追加 0 条。
+- **③ 在 MySQL 模式下没人读。** `MySQLLedger.is_consumed` 查的是 `scan_plan`
+  现查回来的 `plan.consumed_ids`；`completed_ids` 收下之后**只在 `mark_done`
+  里往里加，从来不查**。500 万条时那是一个 1.1 GB、没有任何人读的 set。
+  （`JsonlLedger.is_consumed` 才真的查它。）
+
+**改法**：
+
+① backfill 前加一个判断，**用字节数、不读文件**。`_write_record` 往两边写的是
+同一行字节，backfill 也只从 combined 逐行复制过去，所以分文件的内容永远是
+combined 的子集——子集的字节数等于全集就说明一条都不缺。166 个数据集加起来
+一次 `stat` 就够。
+
+② `completed_ids` 改成**先开账本、看拿到的是哪一种再决定要不要读**。
+
+**这里有个坑，写下来免得以后有人"简化"掉**：不能按「配了 MySQL」来判断。
+MySQL 连不上而 `fail_fast` 关着的时候，`open_ledger` 会**退回文件账本**——那时候
+这个集合是续跑唯一的依据，不读就会把已经翻完的整轮重翻一遍。所以判据必须是
+拿到手的账本类型（`isinstance(ledger, JsonlLedger)`），不是配置。
+`test_a_mysql_fallback_to_file_mode_still_loads_them` 就是钉这个的，我把
+`config.mysql is None` 的写法试了一遍，确认它会红。
+
+**收益**（20 万条实测，外推到 500 万）：
+
+```
+  367,626 条  改前  18s / 读 1.6 GB / 46 MB   →  改后 0.01s / 读 0 / 0.1 MB
+5,000,000 条  改前 245s / 读 21 GB  / 627 MB  →  改后 0.08s / 读 0 / 0.7 MB
+```
+
+**没动的**：`scan_plan` 和 `is_consumed` 一行没碰。续跑的正确性完全由数据库
+那侧决定，这次只是不再白读文件。
+
+**对另一侧的影响**：
+① **`MySQLLedger.completed_ids` 现在恒为空集。** 它本来就没被 `is_consumed`
+读过，所以行为不变；但如果你打算让 `is_consumed` 用上它（我在早先的日志里提过
+这个缺口），**得先把 `_prepare_zip_run` 那个 isinstance 判断改回去**，否则集合是
+空的。这两处是一对，改一个必须动另一个。
+② 收尾的 `prune_failed` 还会整读一遍 `train.jsonl`。那遍是真在干活（裁剪
+failed.jsonl），而且在最后，不影响启动，这次没动。
+
+**验证**：`pytest -q` → 267 passed / 25 skipped；`ruff --select F,E9` 干净。
+两个"天真改法"都做了变异测试，确认新测试会红：把判据改成 `config.mysql is None`
+→ 红；把 backfill 的调用点改成 `elif False` → 红。
+
+
 ## 2026-09-06 · 修 `mark_rejected` 漏传 `source_lang`（越界进了你的文件）
 
 **动了**：`src/finevision_to_sharegpt/db/mysql_ledger.py`（**你的文件**）、

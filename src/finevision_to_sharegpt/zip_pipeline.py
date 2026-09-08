@@ -12,6 +12,7 @@ from .archive import iter_dataset_parquets
 from .config_loader import DatasetRequest, ZipTaskConfig
 from .dataset_registry import RegisteredDataset, load_dataset_registry, resolve_dataset_selection
 from .db import ConsumptionLedger, DatasetVersion, open_ledger
+from .db.ledger import JsonlLedger
 from .image_store import ImageStore, _safe_path_part
 from .json_io import (
     append_jsonl,
@@ -252,10 +253,21 @@ def _prepare_zip_run(
             truncate_file(config.failed_path)
         if config.rejected_path is not None:
             truncate_file(config.rejected_path)
-    elif config.output_jsonl.exists():
+    elif config.output_jsonl.exists() and _backfill_is_needed(config, datasets):
         _backfill_dataset_jsonls(config, datasets)
-    completed_ids = load_completed_ids([config.output_jsonl]) if config.resume else set()
-    ledger = open_ledger(config.mysql, completed_ids, batch_id=_batch_id(config))
+    # 先开账本，看清楚拿到的是哪一种，再决定要不要读那一大坨 id。
+    #
+    # 只有文件账本会去查这个集合；MySQL 账本的 is_consumed 走的是 scan_plan
+    # 现查回来的 consumed_ids，收下这个集合之后一次都不读（mysql_ledger.py 的
+    # is_consumed）。500 万条时这一遍是 7 GB 的磁盘和 1.1 GB 的内存，全花在一个
+    # 没人查的 set 上。
+    #
+    # 不能按「配了 MySQL」来判断：MySQL 连不上而 fail_fast 是关的时候，
+    # open_ledger 会退回文件账本——那时候这个集合是续跑唯一的依据，不读就会
+    # 把已经翻完的整轮重翻一遍。所以判据必须是拿到手的账本类型。
+    ledger = open_ledger(config.mysql, set(), batch_id=_batch_id(config))
+    if config.resume and isinstance(ledger, JsonlLedger):
+        ledger.completed_ids = load_completed_ids([config.output_jsonl])
     return image_store, datasets, ledger
 
 
@@ -504,6 +516,38 @@ def _dataset_safe_name_of_record(record: dict[str, Any], images_dir: str) -> str
     if len(parts) >= 3 and parts[0] == images_dir:
         return parts[1]
     return None
+
+
+def _file_size(path: Path) -> int:
+    return path.stat().st_size if path.exists() else 0
+
+
+def _backfill_is_needed(
+    config: ZipTaskConfig, datasets: list[tuple[RegisteredDataset, DatasetRequest]]
+) -> bool:
+    """分数据集的 jsonl 是不是真的落后于合并的那份。
+
+    backfill 是一次性迁移：`_write_record` 一直是同时往两边写的，所以稳态下
+    它读完几百 MB 之后追加 0 条。以前每次重启都白跑一遍，500 万条时光这一步
+    就是十几 GB 的读。
+
+    判据用**字节数**而不是行数，因为字节数不用读文件——166 个数据集加起来
+    一次 stat 就够，而读一遍是十几 GB。这是准确的：`_write_record` 往两边写的
+    是同一行字节，backfill 也只从 combined 逐行复制过去，所以分文件的内容永远
+    是 combined 的子集；子集的字节数等于全集，就说明一条都不缺。
+
+    只选了部分数据集跑的时候两者本来就不等，那就照旧跑 backfill——不会更慢，
+    只是没有这个加速。
+    """
+
+    combined = _file_size(config.output_jsonl)
+    if combined == 0:
+        return False
+    per_dataset = sum(
+        _file_size(_dataset_output_paths(config, dataset.name)[0])
+        for dataset, _request in datasets
+    )
+    return per_dataset < combined
 
 
 def _backfill_dataset_jsonls(config: ZipTaskConfig, datasets: list[tuple[RegisteredDataset, DatasetRequest]]) -> None:
