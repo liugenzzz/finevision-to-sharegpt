@@ -854,5 +854,7 @@
     "store_conversations": true,
     "_store_conversations_note": "存英文原文。关掉的话账本只有 id/图片路径/状态，省几 GB，但英文那部分样本 db-export 导不出来（源文本不在库里），库就当不成动态配比的唯一数据源。这个开关不能事后补：关着跑完的行不会回填。",
     "pool_size": 8
-  }
+  },
+  "images_root": "/mnt/si003010kcx0/mmdata/mm_images/fv_images",
+  "_images_root_note": "图片全部落在这里。ImageStore 取 output_root=父目录、images_dir=目录名，所以文件写到 <父目录>/fv_images/<数据集>/<hash>.<ext>，库里记的相对路径前缀就是 'fv_images'。改这个值会同时改变落盘位置和库里记的前缀——新旧前缀混在一个数据集里会让训练静默少掉一半图，改之前先跑 scripts/check_image_paths.py 确认。"
 }

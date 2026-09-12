@@ -4,6 +4,72 @@
 
 ---
 
+## 2026-09-12 · 图片路径对齐到 fv_images —— 改了 images_root，**这条你必须看**
+
+用户确认了盘上的真实布局（截图里 166 个数据集目录，里面是 `<hash>.png`）：
+
+```
+/mnt/si003010kcx0/mmdata/mm_images/fv_images/<数据集>/<sha256>.<ext>
+```
+
+而库里存的前缀是 `images/`——`e22b1cf` 标过的坑坐实了。两头都改了。
+
+### 一、`images_root` 改了（**影响你的管线**）
+
+`configs/translate_5m.json` 和 `configs/db_scan_all.json` 的 `images_root`
+显式设成 `/mnt/si003010kcx0/mmdata/mm_images/fv_images`。推导链验过：
+
+```
+images_root  = /mnt/si003010kcx0/mmdata/mm_images/fv_images
+output_root  = /mnt/si003010kcx0/mmdata/mm_images
+相对路径前缀 = 'fv_images'
+落盘         = /mnt/.../mm_images/fv_images/mmra/<hash>.png    ← 和盘上一致
+```
+
+**对你的影响**：以后跑翻译，图片会写到那个目录，库里记 `fv_images/` 前缀。
+之前是相对路径 `output/run5m/images`，按当前工作目录解析——换个目录跑就换个地方，
+现在是绝对路径，不再受 cwd 影响。两份配置里都加了 `_images_root_note` 说明
+改这个值会同时改落盘位置和库里前缀。
+
+### 二、历史行改写：`scripts/fix_image_prefix.py`
+
+170 万行记的还是 `images/`，得对齐。默认只统计，`--apply` 才写：
+
+```
+python3 scripts/fix_image_prefix.py configs/translate_5m.json --to fv_images
+python3 scripts/fix_image_prefix.py configs/translate_5m.json --to fv_images --apply
+```
+
+几个细节：
+
+- 统计用 `JSON_UNQUOTE(JSON_EXTRACT(image_paths,'$[0]'))` 取第一个元素再切第一段。
+  一开始按文本切，切出来是 `["images`，错的。
+- 改写匹配带前导引号的 `"<old>/`，所以**幂等**——`"fv_images/` 不含 `"images/`，
+  重复跑第二次会报「全部已经是目标值，无事可做」。
+- **多图行的每个路径都会改到**，实测过双图那行两个都对了。
+- 探测到多个旧前缀时直接报错不猜，要 `--from` 指定。
+
+### 三、验证顺序
+
+```
+1. fix_image_prefix.py --apply       改库
+2. check_image_paths.py <根>         确认真能读到
+3. export_general_mix.py             导出，路径已是 fv_images/...
+```
+
+端到端验过：导出记录的 `images` 是 `fv_images/okvqa/<hash>.jpg`，
+`<image>` 标记数和图数一致。
+
+### 对另一侧的影响（汇总）
+
+- **`images_root` 现在是绝对路径**，你那边如果有脚本假设它是相对于输出目录的，
+  要跟着改。
+- **新旧前缀绝不能混**。同一个数据集一半 `images/` 一半 `fv_images/`，训练时
+  静默少掉一半图。所以改 `images_root` 之后**必须**跑一次 `fix_image_prefix.py`，
+  再跑 `check_image_paths.py` 确认命中率是 100% 而不是中间值。
+
+---
+
 ## 2026-09-12 · 图片路径怎么拼、能不能读到，加个脚本直接验
 
 用户问图片路径。把整条链核清楚了，并做成能跑的检查，别再靠对着看。
