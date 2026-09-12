@@ -248,6 +248,7 @@ def fetch_rows(pool: Any, ids: list[int], chunk: int = 2000):
     """
 
     from finevision_to_sharegpt.db.mysql_ledger import _load_json
+    from finevision_to_sharegpt.translator import _insert_image_token
 
     for start in range(0, len(ids), chunk):
         part = ids[start : start + chunk]
@@ -273,10 +274,13 @@ def fetch_rows(pool: Any, ids: list[int], chunk: int = 2000):
             conversations = translated if row[4] == "zh" and translated else _load_json(row[3])
             if not conversations:
                 continue
+            images = _load_json(row[2]) or []
             yield {
                 "id": row[1],
-                "images": _load_json(row[2]) or [],
-                "conversations": conversations,
+                "images": images,
+                # 和 db-export 同口径：库里存的原始轮次没有 <image> 标记，
+                # 不补的话 LlamaFactory 不知道图插在哪。对译文是幂等的。
+                "conversations": _insert_image_token(conversations, len(images)),
             }
 
 
@@ -438,6 +442,12 @@ def main() -> int:
                         stat[n] += 1
             print(f"    {out_p}  {sum(stat.values())} 条")
 
+        files = (
+            {f"{n}.jsonl": n for n in stat}
+            if split_by_group
+            else {out_p.name: out_p.stem}
+        )
+
         manifest = {
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "config_file": str(cfg_path),
@@ -462,7 +472,38 @@ def main() -> int:
                 for g in groups
             ],
             "total_written": sum(stat.values()),
+            "llamafactory": {
+                "dataset": ",".join(sorted(files.values())),
+                "interleave_probs": ",".join(
+                    f"{stat[n] / max(sum(stat.values()), 1):.4f}" for n in sorted(files.values())
+                )
+                if split_by_group
+                else None,
+            },
         }
+        # LlamaFactory 的 dataset_info.json。通用侧只有一种格式——parse_row 没图
+        # 直接拒，所以 done 的行必然带图且必然是 conversations + from/value，
+        # 不存在领域侧那种 pt/alpaca/sharegpt 三选一的拆分问题。
+        info = {
+            name: {
+                "file_name": fname,
+                "formatting": "sharegpt",
+                "columns": {"messages": "conversations", "images": "images"},
+                "tags": {
+                    "role_tag": "from",
+                    "content_tag": "value",
+                    "user_tag": "human",
+                    "assistant_tag": "gpt",
+                },
+            }
+            for fname, name in files.items()
+        }
+        info_dir = out_p if split_by_group else out_p.parent
+        (info_dir / "dataset_info.json").write_text(
+            json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"    dataset_info.json -> {info_dir / 'dataset_info.json'}")
+
         mpath = (
             out_p / "manifest.json"
             if split_by_group

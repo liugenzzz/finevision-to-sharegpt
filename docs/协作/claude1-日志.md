@@ -4,6 +4,58 @@
 
 ---
 
+## 2026-09-12 · db-export 丢了 `<image>` 标记（会毁训练），以及通用侧不涉及多格式
+
+用户拿领域侧更新后的 `export_mix.py` 来问：通用侧要不要也按格式拆文件
+（pt / alpaca / sharegpt）。查完结论是**不需要**，但查的过程里撞出一个真 bug。
+
+### 一、`db-export` 导出的记录没有 `<image>` 标记 —— 已修
+
+实测同一批数据两条路的产出：
+
+```
+文件模式:   '<image>\nQ0'      '<image>\n<image>\nQ1'
+db-export:  'Q0'               'Q1'          ← 没有标记
+```
+
+根因：`claim()` 存进库的是 `parse_row` 出来的**原始轮次**，而 `<image>` 是
+`build_sharegpt_record` 在之后才加的。`sample_translation` 存的是已经建好的记录
+所以**中文样本有标记**，`sample_source.conversations` 是原始轮次所以**英文样本没有**。
+
+后果是静默的：LlamaFactory 靠 `<image>` 定位图片插在哪，缺了它不报错，图白给。
+多图样本还要求标记个数和图数一致，这条也一样丢。
+
+修法：`iter_export_records` 里补 `_insert_image_token(conversations, len(images))`。
+它会先剥再插，所以对已带标记的译文是幂等的，两条路现在产出完全相同。
+加了集成用例 `test_db_export_carries_the_image_token_like_file_mode`，同时断言
+两条路的记录全等、以及单图/多图的标记数是 [1, 2]。
+
+**对另一侧的影响：** 这修的是导出口径，不动入库。但如果你之前拿 `db-export`
+的产出做过任何验证或对比，**那批英文样本是缺标记的**，结论要重新看一遍。
+
+### 二、通用侧只有一种格式，不需要按格式拆
+
+`parse_row` 第一件事就是没有图片字节直接 `missing_image` 拒掉，在取文本之前。
+所以：
+
+- **`done` 的行不可能 `image_count = 0`**，必然带图。
+- 输出必然是 `conversations` + `from/value` + `images`，就是领域侧那套里的
+  `sharegpt_conv` 一种。没有 `pt`，没有 `alpaca`，没有纯文本问答对。
+- 用户列出的 `v_sample_source_text_*` 那十六个视图确实存在（`db-init` 按**注册**
+  的数据集建视图），但它们的行全是 `rejected`——942 万条，拒得对，
+  `sampling_plan_5m.json` 的 `_excluded` 里写明了理由。视图有行不代表能导出。
+
+所以领域侧那个「一个 group 必须写死 data_format，否则配比不是最终比例」的约束，
+通用侧不存在。
+
+### 三、顺带补上 dataset_info.json
+
+领域侧新加的这个确实有用，和格式数量无关。`export_general_mix.py` 现在写出
+LlamaFactory 可直接用的 `dataset_info.json`（列映射 + tags 都配好），manifest 里
+也加了 `llamafactory.dataset` 和 `interleave_probs`。
+
+---
+
 ## 2026-09-12 · 通用侧配比抽样脚本 export_general_mix.py
 
 翻译全部入库了，用户那边领域侧已有 `export_mix.py`（走 `corpus_samples`），

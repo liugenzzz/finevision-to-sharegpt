@@ -11,6 +11,9 @@ from .fingerprint import source_fingerprint
 from .ledger import ConsumptionLedger, DatasetVersion, ScanPlan
 from .pool import BatchWriter, ConnectionPool, MySQLUnavailable
 
+# 放在函数外会形成 translator -> db 的反向依赖，这里只借一个纯函数。
+from ..translator import _insert_image_token  # noqa: E402
+
 __all__ = ["MySQLLedger", "MySQLUnavailable"]
 
 # The upserts below use the VALUES() function rather than the row-alias form
@@ -629,10 +632,15 @@ class MySQLLedger(ConsumptionLedger):
                 conversations = translated if row[4] == "zh" and translated else _load_json(row[3])
                 if not conversations:
                     continue
+                images = _load_json(row[2]) or []
                 yield {
                     "id": row[1],
-                    "images": _load_json(row[2]) or [],
-                    "conversations": conversations,
+                    "images": images,
+                    # claim 存的是解析出来的原始轮次，没有 <image> 标记——标记是
+                    # build_sharegpt_record 之后才加的。不在这里补，导出的英文样本
+                    # 就没有标记，LlamaFactory 不知道图该插在哪，静默出错。
+                    # _insert_image_token 会先剥再插，所以对已有标记的译文是幂等的。
+                    "conversations": _insert_image_token(conversations, len(images)),
                 }
 
 

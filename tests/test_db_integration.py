@@ -716,3 +716,52 @@ def test_a_chinese_native_dataset_is_recorded_as_such_and_exports_apart(
 
     exported = run_db_export(config_path, tmp_path / "zh.jsonl", source_lang="zh")
     assert exported["written"] == 3
+
+
+def test_db_export_carries_the_image_token_like_file_mode(tmp_path, clean_database, mysql_settings):
+    """两条导出路必须产出同一条记录。
+
+    账本里存的是解析出来的原始轮次，`<image>` 是 build_sharegpt_record 之后才加的。
+    db-export 若不补，导出的样本没有标记，LlamaFactory 不知道图插在哪——不报错，
+    只是训练时图白给。多图样本的标记个数也要跟着图数走。
+    """
+
+    from finevision_to_sharegpt.db_commands import run_db_export
+
+    data_root = tmp_path / "zips"
+    data_root.mkdir()
+    parquet_path = tmp_path / "okvqa.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "images": [[b"\xff\xd8\xff1"], [b"\xff\xd8\xffA", b"\xff\xd8\xffB"]],
+                "texts": [[{"user": "Q0", "assistant": "A0"}], [{"user": "Q1", "assistant": "A1"}]],
+            }
+        ),
+        parquet_path,
+        row_group_size=2,
+    )
+    with zipfile.ZipFile(data_root / "okvqa.zip", "w") as archive:
+        archive.write(parquet_path, arcname="nested/part.parquet")
+    registry = tmp_path / "datasets.json"
+    registry.write_text(
+        json.dumps({"data_root": str(data_root), "datasets": {"okvqa": {"zip": "okvqa.zip"}}}),
+        encoding="utf-8",
+    )
+    config, config_path = write_config(tmp_path, registry, mysql_settings, chinese_ratio=0.0)
+    run_export_zips(config)
+    run_db_export(config_path, tmp_path / "exported.jsonl")
+
+    from_file = {
+        json.loads(line)["id"]: json.loads(line)
+        for line in (config.output_jsonl.parent / "okvqa" / config.output_jsonl.name)
+        .read_text(encoding="utf-8")
+        .splitlines()
+    }
+    from_db = {
+        json.loads(line)["id"]: json.loads(line)
+        for line in (tmp_path / "exported.jsonl").read_text(encoding="utf-8").splitlines()
+    }
+    assert from_db == from_file
+    tokens = [r["conversations"][0]["value"].count("<image>") for r in from_db.values()]
+    assert sorted(tokens) == [1, 2]
