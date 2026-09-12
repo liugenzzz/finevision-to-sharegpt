@@ -1,0 +1,275 @@
+{
+  "total": 200000,
+  "seed": 42,
+  "shuffle": true,
+  "on_shortfall": "scale",
+  "output": "./out/general_mix_v1.jsonl",
+  "split_by_group": false,
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "pool_size": 4,
+    "on_connect_error": "fail"
+  },
+  "groups": [
+    {
+      "name": "caption_图文描述",
+      "weight": 0.22,
+      "max_share_per_dataset": 0.18,
+      "filter": {
+        "dataset": [
+          "densefusion_1m",
+          "allava_laion",
+          "google_landmarks",
+          "lvis_instruct4v",
+          "localized_narratives",
+          "coco_colors",
+          "image_textualization(filtered)",
+          "ureader_cap",
+          "sharegpt4o",
+          "sharegpt4v(coco)",
+          "sharegpt4v(llava)",
+          "sharegpt4v(sam)",
+          "sharegpt4v(knowledge)",
+          "laion_gpt4v",
+          "textcaps",
+          "screen2words",
+          "vistext",
+          "Flickr30k"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "vqa_通用问答",
+      "weight": 0.25,
+      "max_share_per_dataset": 0.22,
+      "filter": {
+        "dataset": [
+          "objects365_qa",
+          "lnqa",
+          "visualwebinstruct(filtered)",
+          "allava_vflan",
+          "vision_flan(filtered)",
+          "mmevol",
+          "LLaVA_Instruct_150K",
+          "tallyqa",
+          "cambrian(filtered)_processed",
+          "vqav2",
+          "a_okvqa",
+          "aokvqa",
+          "cocoqa",
+          "visual7w",
+          "idk",
+          "lrv_normal(filtered)",
+          "oodvqa",
+          "sketchyvqa",
+          "vizwiz(mathv360k)",
+          "art",
+          "yesbut",
+          "drivelm",
+          "spark",
+          "indoor_qa",
+          "wildvision",
+          "the_cauldron"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "reasoning_视觉推理",
+      "weight": 0.07,
+      "max_share_per_dataset": 0.25,
+      "filter": {
+        "dataset": [
+          "clevr",
+          "clevr_math",
+          "clevr_math(mathv360k)",
+          "super_clevr(mathv360k)",
+          "raven",
+          "nlvr2",
+          "mimic_cgd",
+          "iconqa",
+          "iconqa(mathv360k)",
+          "spatialsense",
+          "vsr",
+          "spot_the_diff",
+          "mmra",
+          "geomverse",
+          "RefCOCO"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "ocr_文档",
+      "weight": 0.17,
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "DoclingMatix",
+          "olmOCR-mix-0225-documents",
+          "olmOCR-mix-0225-books",
+          "ureader_qa_processed",
+          "ureader_ie",
+          "ureader_kg_processed",
+          "ocrvqa",
+          "textvqa",
+          "docvqa",
+          "st_vqa",
+          "est_vqa",
+          "textocr(gpt4v)",
+          "cocotext",
+          "ctw",
+          "visualmrc",
+          "pdfvqa",
+          "slidevqa",
+          "infographic_vqa",
+          "infographic_vqa_llava_format",
+          "infographic(gpt4v)",
+          "sroie",
+          "funsd",
+          "svrd",
+          "invoices_receipts",
+          "hw_squad",
+          "llavar_gpt4_20k",
+          "synthdog",
+          "tal_ocr_eng",
+          "k12_printing",
+          "datik",
+          "iam",
+          "bentham",
+          "imgur5k",
+          "wordart",
+          "iiit5k",
+          "orand_car_a",
+          "handwriting_forms",
+          "maptext",
+          "rendered_text",
+          "chrome_writting"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "chart_table_图表",
+      "weight": 0.12,
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "Unichart",
+          "SynthChartNet",
+          "dvqa",
+          "mmc_instruct",
+          "plotqa",
+          "CoSyn_400k_chart",
+          "figureqa",
+          "figureqa(mathv360k)",
+          "chart2text",
+          "chartqa",
+          "CoSyn_400k_table",
+          "robut_wikisql",
+          "robut_wtq",
+          "robut_sqa",
+          "vqaonbd",
+          "mapqa",
+          "mapqa(mathv360k)",
+          "hitab",
+          "multihiertt",
+          "finqa",
+          "tat_qa",
+          "tat_dqa",
+          "sujet_finance",
+          "lrv_chart"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "math_数学",
+      "weight": 0.08,
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "mavis_math_rule_geo",
+          "mavis_math_metagen",
+          "CoSyn_400k_math",
+          "geo170k(align)",
+          "geo170k(qa)",
+          "geoqa+(mathv360k)",
+          "geometry3k(mathv360k)",
+          "geo3k",
+          "geos(mathv360k)",
+          "unigeo(mathv360k)",
+          "intergps",
+          "tabmwp",
+          "tabmwp(mathv360k)",
+          "latexformulas",
+          "SynthFormulaNet",
+          "mathwriting-google",
+          "hme100k",
+          "latex_handwritten"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "diagram_科学图示",
+      "weight": 0.05,
+      "max_share_per_dataset": 0.3,
+      "filter": {
+        "dataset": [
+          "arxivqa",
+          "CoSyn_400k_document",
+          "CoSyn_400k_diagram",
+          "CoSyn_400k_graphic",
+          "CoSyn_400k_music",
+          "CoSyn_400k_circuit",
+          "CoSyn_400k_chemical",
+          "CoSyn_400k_nutrition",
+          "datikz",
+          "ai2d_merged",
+          "scienceqa",
+          "scienceqa(nona_context)",
+          "tqa",
+          "blockdiagramhandwritten",
+          "blockdiagramcomputerized",
+          "diagram_image_to_text"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "gui_界面代码",
+      "weight": 0.035,
+      "max_share_per_dataset": 0.3,
+      "filter": {
+        "dataset": [
+          "aguvis-stage-1",
+          "screenqa",
+          "groundui",
+          "websight",
+          "alfworldgpt",
+          "SynthCodeNet"
+        ],
+        "lang": "zh"
+      }
+    },
+    {
+      "name": "domain_专业领域",
+      "weight": 0.005,
+      "max_share_per_dataset": 0.6,
+      "filter": {
+        "dataset": [
+          "pathvqa",
+          "pmc_vqa(mathv360k)",
+          "vqarad"
+        ],
+        "lang": "zh"
+      }
+    }
+  ]
+}

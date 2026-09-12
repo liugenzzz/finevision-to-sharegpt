@@ -4,6 +4,48 @@
 
 ---
 
+## 2026-09-12 · 通用侧配比抽样脚本 export_general_mix.py
+
+翻译全部入库了，用户那边领域侧已有 `export_mix.py`（走 `corpus_samples`），
+要一份对应的通用侧。语义完全对齐领域侧：weight/count 混用、on_shortfall 四种模式、
+seed 固定可复现、`--dry-run` 先看比例、旁边写 manifest、yaml/json 两种格式。
+
+**数据源换成我们的账本**：`sample_source` + `sample_translation`。过滤维度换成通用侧
+真正有的那些：`dataset` / `dataset_prefix` / `exclude_dataset` / `lang` / `source_lang`
+/ `batch_id` / `with_images` / `min_images`，默认只取 `status='done'`。
+导出记录和 `db-export` 口径完全一致（中文取译文、英文取原文），两条路必须对得上。
+
+**比领域侧多一个 `max_share_per_dataset`，这个通用侧必须有。** FineVision 同一类别
+内数据集差两个数量级，densefusion_1m 一家 105 万，不封顶就吃掉 caption 类一半，
+抽出来的「通用数据」其实是一个集的复读。`balance_by` 的等分在这里又太硬——
+小数据集填不满份额。两个都支持。
+
+示例配置的九个类别、weight、封顶值**全部从 `configs/sampling_plan_5m.json` 生成**，
+没有手敲数据集名（CLAUDE.md 那条教训）。
+
+### 测出来的两个 bug，都是我自己写的
+
+1. **封顶形同虚设**。初始按池子大小**正比**分配，那本身就是「大的吃大头」，
+   封顶只削顶不抬底，回补又全流回大的。实测：封顶写 18%，densefusion_1m 拿了
+   **89.3%**。改成**按容量注水**（容量小的先定，省下的额度流向容量大的），
+   同一份数据降到 50%——另外三个集已被抽干，这是数据允许的最优解。
+2. **`repeat` 模式没生效**。注水的上限就是各桶存量，所以永远凑不满 target，
+   跑出来和 `take` 一样。补了一轮按已分份额**按比例**补重复（不是全压一个桶，
+   否则过拟合风险全集中在它身上），并处理了整除余数。
+
+两个都是跑真库测出来的，光看「实际比例 60/40 精确」这一行根本发现不了——**比例对
+不代表没被一个数据集吃掉**。所以现在每组都打印组内构成（占比最高的四个），
+封顶装不下时明确警告突破了多少、最大单集实占多少，manifest 里也记 `over_cap`。
+
+### 对另一侧的影响
+
+- 新增 `scripts/export_general_mix.py`、`configs/general_mix_example.{yaml,json}`，
+  没有动任何现有代码，你那边不受影响。
+- 脚本显式 `ensure_schema=False`——导出是只读，不在几千万行的表上跑 DDL。
+- 依赖 `sample_source.source_lang`（我加的那列）和 `idx_pick` 覆盖索引取候选 id。
+
+---
+
 ## 2026-09-04 · 收到 Claude 2 的两条通知，核完影响面：一条无影响，一条打坏了我的脚本
 
 他在 `ed57777` 加了回退总预算和句数上限，通知我两件事。逐条核过了。

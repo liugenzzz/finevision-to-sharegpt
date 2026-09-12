@@ -1,0 +1,276 @@
+# 通用侧配比文件 —— 跟训练一起存档，以后能复现当初的比例
+#
+# 用法：
+#   export FV_MYSQL_PASSWORD='...'
+#   python3 scripts/export_general_mix.py --config configs/general_mix_example.yaml --dry-run
+#   python3 scripts/export_general_mix.py --config configs/general_mix_example.yaml
+#
+# 没装 pyyaml 就用同目录的 .json，字段完全一样。
+
+total: 200000            # 权重组瓜分的总量。不写则按「不失真上限」自动推算
+seed: 42                   # 固定种子，同一份配置每次抽出来的是同一批
+shuffle: true              # 采样随机 + 输出打散；false 则按 id 顺序取
+on_shortfall: scale        # scale 等比缩小保比例 | take 有多少拿多少 | repeat 重复补足 | error 报错
+output: ./out/general_mix_v1.jsonl
+split_by_group: false      # true 则 output 当作目录，每个类别一个 jsonl
+
+mysql:                     # 和任务配置同一套；密码走环境变量，别写死
+  host: 127.0.0.1
+  port: 3306
+  user: fv
+  password: "${FV_MYSQL_PASSWORD}"
+  database: finevision
+  pool_size: 4             # 导出是单线程读，4 足够
+  on_connect_error: fail
+
+# 九个类别的 weight 和 max_share_per_dataset 来自 configs/sampling_plan_5m.json，
+# 不是现编的。weight 是类别占总量的比例（九个加起来正好 1.0）。
+#
+# max_share_per_dataset 是单个数据集在本类别配额里的上限，通用侧必须有：
+# FineVision 同一类别内数据集能差两个数量级，densefusion_1m 一家 105 万，
+# 不封顶的话它吃掉 caption 类一半，抽出来的「通用数据」其实是一个集的复读。
+# 想改成各数据集等分就把它换成 balance_by: dataset —— 但小数据集会填不满份额。
+
+groups:
+  - name: caption_图文描述
+    weight: 0.22
+    max_share_per_dataset: 0.18
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "densefusion_1m"
+        - "allava_laion"
+        - "google_landmarks"
+        - "lvis_instruct4v"
+        - "localized_narratives"
+        - "coco_colors"
+        - "image_textualization(filtered)"
+        - "ureader_cap"
+        - "sharegpt4o"
+        - "sharegpt4v(coco)"
+        - "sharegpt4v(llava)"
+        - "sharegpt4v(sam)"
+        - "sharegpt4v(knowledge)"
+        - "laion_gpt4v"
+        - "textcaps"
+        - "screen2words"
+        - "vistext"
+        - "Flickr30k"
+
+  - name: vqa_通用问答
+    weight: 0.25
+    max_share_per_dataset: 0.22
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "objects365_qa"
+        - "lnqa"
+        - "visualwebinstruct(filtered)"
+        - "allava_vflan"
+        - "vision_flan(filtered)"
+        - "mmevol"
+        - "LLaVA_Instruct_150K"
+        - "tallyqa"
+        - "cambrian(filtered)_processed"
+        - "vqav2"
+        - "a_okvqa"
+        - "aokvqa"
+        - "cocoqa"
+        - "visual7w"
+        - "idk"
+        - "lrv_normal(filtered)"
+        - "oodvqa"
+        - "sketchyvqa"
+        - "vizwiz(mathv360k)"
+        - "art"
+        - "yesbut"
+        - "drivelm"
+        - "spark"
+        - "indoor_qa"
+        - "wildvision"
+        - "the_cauldron"
+
+  - name: reasoning_视觉推理
+    weight: 0.07
+    max_share_per_dataset: 0.25
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "clevr"
+        - "clevr_math"
+        - "clevr_math(mathv360k)"
+        - "super_clevr(mathv360k)"
+        - "raven"
+        - "nlvr2"
+        - "mimic_cgd"
+        - "iconqa"
+        - "iconqa(mathv360k)"
+        - "spatialsense"
+        - "vsr"
+        - "spot_the_diff"
+        - "mmra"
+        - "geomverse"
+        - "RefCOCO"
+
+  - name: ocr_文档
+    weight: 0.17
+    max_share_per_dataset: 0.15
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "DoclingMatix"
+        - "olmOCR-mix-0225-documents"
+        - "olmOCR-mix-0225-books"
+        - "ureader_qa_processed"
+        - "ureader_ie"
+        - "ureader_kg_processed"
+        - "ocrvqa"
+        - "textvqa"
+        - "docvqa"
+        - "st_vqa"
+        - "est_vqa"
+        - "textocr(gpt4v)"
+        - "cocotext"
+        - "ctw"
+        - "visualmrc"
+        - "pdfvqa"
+        - "slidevqa"
+        - "infographic_vqa"
+        - "infographic_vqa_llava_format"
+        - "infographic(gpt4v)"
+        - "sroie"
+        - "funsd"
+        - "svrd"
+        - "invoices_receipts"
+        - "hw_squad"
+        - "llavar_gpt4_20k"
+        - "synthdog"
+        - "tal_ocr_eng"
+        - "k12_printing"
+        - "datik"
+        - "iam"
+        - "bentham"
+        - "imgur5k"
+        - "wordart"
+        - "iiit5k"
+        - "orand_car_a"
+        - "handwriting_forms"
+        - "maptext"
+        - "rendered_text"
+        - "chrome_writting"
+
+  - name: chart_table_图表
+    weight: 0.12
+    max_share_per_dataset: 0.15
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "Unichart"
+        - "SynthChartNet"
+        - "dvqa"
+        - "mmc_instruct"
+        - "plotqa"
+        - "CoSyn_400k_chart"
+        - "figureqa"
+        - "figureqa(mathv360k)"
+        - "chart2text"
+        - "chartqa"
+        - "CoSyn_400k_table"
+        - "robut_wikisql"
+        - "robut_wtq"
+        - "robut_sqa"
+        - "vqaonbd"
+        - "mapqa"
+        - "mapqa(mathv360k)"
+        - "hitab"
+        - "multihiertt"
+        - "finqa"
+        - "tat_qa"
+        - "tat_dqa"
+        - "sujet_finance"
+        - "lrv_chart"
+
+  - name: math_数学
+    weight: 0.08
+    max_share_per_dataset: 0.15
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "mavis_math_rule_geo"
+        - "mavis_math_metagen"
+        - "CoSyn_400k_math"
+        - "geo170k(align)"
+        - "geo170k(qa)"
+        - "geoqa+(mathv360k)"
+        - "geometry3k(mathv360k)"
+        - "geo3k"
+        - "geos(mathv360k)"
+        - "unigeo(mathv360k)"
+        - "intergps"
+        - "tabmwp"
+        - "tabmwp(mathv360k)"
+        - "latexformulas"
+        - "SynthFormulaNet"
+        - "mathwriting-google"
+        - "hme100k"
+        - "latex_handwritten"
+
+  - name: diagram_科学图示
+    weight: 0.05
+    max_share_per_dataset: 0.3
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "arxivqa"
+        - "CoSyn_400k_document"
+        - "CoSyn_400k_diagram"
+        - "CoSyn_400k_graphic"
+        - "CoSyn_400k_music"
+        - "CoSyn_400k_circuit"
+        - "CoSyn_400k_chemical"
+        - "CoSyn_400k_nutrition"
+        - "datikz"
+        - "ai2d_merged"
+        - "scienceqa"
+        - "scienceqa(nona_context)"
+        - "tqa"
+        - "blockdiagramhandwritten"
+        - "blockdiagramcomputerized"
+        - "diagram_image_to_text"
+
+  - name: gui_界面代码
+    weight: 0.035
+    max_share_per_dataset: 0.3
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "aguvis-stage-1"
+        - "screenqa"
+        - "groundui"
+        - "websight"
+        - "alfworldgpt"
+        - "SynthCodeNet"
+
+  - name: domain_专业领域
+    weight: 0.005
+    max_share_per_dataset: 0.6
+    filter:
+      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
+      dataset:
+        - "pathvqa"
+        - "pmc_vqa(mathv360k)"
+        - "vqarad"
+
+# --- 其他可用的 filter 字段 ---
+#   dataset_prefix: CoSyn_400k_    # 前缀成组，省得把二十个名字抄一遍（可给 list）
+#   exclude_dataset: [densefusion_1m]
+#   source_lang: zh                # 源文本本来就是中文的集合（和 lang 是两回事）
+#   with_images: true              # 只要有图的；no_images / min_images: 2 同理
+#   batch_id: run5m
+#   status: done                   # 默认就是 done，pending/rejected 没有可用产出
+
+# --- 按显式条数：不参与权重瓜分，先从 total 里扣掉 ---
+# - name: 手工补的一批
+#   count: 5000
+#   filter:
+#     dataset: Flickr30k
