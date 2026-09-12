@@ -326,6 +326,9 @@ def main() -> int:
         sys.exit("[FATAL] 需要 output（配置里写或 --out 传）")
 
     renders = {g["name"]: str(g.get("render") or cfg.get("render") or "auto") for g in groups}
+    # bucket 决定写进哪个文件。按类别配比需要很多组，但训练通常只想要少数几份
+    # （比如中文一份英文一份），组数和文件数得能分开定。不写就一组一个文件。
+    bucket_of = {g["name"]: str(g.get("bucket") or g["name"]) for g in groups}
     bad = {n: r for n, r in renders.items() if r not in ("auto", "zh", "en")}
     if bad:
         sys.exit(f"[FATAL] render 只能是 auto/zh/en，这几组写错了: {bad}")
@@ -449,12 +452,22 @@ def main() -> int:
         stat: Counter[str] = Counter()
         if split_by_group:
             out_p.mkdir(parents=True, exist_ok=True)
-            for nm, ids in picked.items():
-                with (out_p / f"{nm}.jsonl").open("w", encoding="utf-8") as fh:
+            per_file: Counter[str] = Counter()
+            handles: dict[str, Any] = {}
+            try:
+                for nm, ids in picked.items():
+                    key = bucket_of[nm]
+                    if key not in handles:
+                        handles[key] = (out_p / f"{key}.jsonl").open("w", encoding="utf-8")
                     for record in fetch_rows(pool, ids, render=renders[nm]):
-                        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+                        handles[key].write(json.dumps(record, ensure_ascii=False) + "\n")
                         stat[nm] += 1
-                print(f"    {nm}.jsonl  {stat[nm]} 条")
+                        per_file[key] += 1
+            finally:
+                for handle in handles.values():
+                    handle.close()
+            for key in sorted(per_file):
+                print(f"    {key}.jsonl  {per_file[key]} 条")
         else:
             out_p.parent.mkdir(parents=True, exist_ok=True)
             order = [(n, i) for n, ids in picked.items() for i in ids]
@@ -475,8 +488,12 @@ def main() -> int:
                         stat[n] += 1
             print(f"    {out_p}  {sum(stat.values())} 条")
 
+        file_counts: Counter[str] = Counter()
+        for nm, n in stat.items():
+            file_counts[bucket_of[nm]] += n
+
         files = (
-            {f"{n}.jsonl": n for n in stat}
+            {f"{k}.jsonl": k for k in sorted(set(bucket_of.values()))}
             if split_by_group
             else {out_p.name: out_p.stem}
         )
@@ -497,6 +514,7 @@ def main() -> int:
                     "count": g.get("count"),
                     "balance_by": g.get("balance_by"),
                     "render": renders[g["name"]],
+                    "bucket": bucket_of[g["name"]],
                     "max_share_per_dataset": g.get("max_share_per_dataset"),
                     "available": avail[g["name"]],
                     "target": targets.get(g["name"], 0),
@@ -506,10 +524,12 @@ def main() -> int:
                 for g in groups
             ],
             "total_written": sum(stat.values()),
+            "files": {f"{k}.jsonl": file_counts[k] for k in sorted(file_counts)},
             "llamafactory": {
                 "dataset": ",".join(sorted(files.values())),
                 "interleave_probs": ",".join(
-                    f"{stat[n] / max(sum(stat.values()), 1):.4f}" for n in sorted(files.values())
+                    f"{file_counts[n] / max(sum(file_counts.values()), 1):.4f}"
+                    for n in sorted(files.values())
                 )
                 if split_by_group
                 else None,

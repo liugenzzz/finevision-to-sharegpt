@@ -1,0 +1,568 @@
+{
+  "_comment": "50 万通用图文：40 万中文 + 10 万英文，九个任务类别按 sampling_plan_5m.json 的 share 配比。中英两档抽的是同一批行、读不同列（store_conversations=true 把英文原文也留在库里），所以两边会有少量同一条样本各出现一次，dry-run 会报。输出两个 jsonl：zh.jsonl / en.jsonl，配 dataset_info.json 直接训。",
+  "total": 500000,
+  "seed": 42,
+  "shuffle": true,
+  "on_shortfall": "scale",
+  "split_by_group": true,
+  "output": "./out/mix_50w/",
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "pool_size": 4,
+    "on_connect_error": "fail"
+  },
+  "groups": [
+    {
+      "name": "caption_图文描述__zh",
+      "bucket": "zh",
+      "weight": 0.176,
+      "render": "zh",
+      "max_share_per_dataset": 0.18,
+      "filter": {
+        "dataset": [
+          "densefusion_1m",
+          "allava_laion",
+          "google_landmarks",
+          "lvis_instruct4v",
+          "localized_narratives",
+          "coco_colors",
+          "image_textualization(filtered)",
+          "ureader_cap",
+          "sharegpt4o",
+          "sharegpt4v(coco)",
+          "sharegpt4v(llava)",
+          "sharegpt4v(sam)",
+          "sharegpt4v(knowledge)",
+          "laion_gpt4v",
+          "textcaps",
+          "screen2words",
+          "vistext",
+          "Flickr30k"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "caption_图文描述__en",
+      "bucket": "en",
+      "weight": 0.044,
+      "render": "en",
+      "max_share_per_dataset": 0.18,
+      "filter": {
+        "dataset": [
+          "densefusion_1m",
+          "allava_laion",
+          "google_landmarks",
+          "lvis_instruct4v",
+          "localized_narratives",
+          "coco_colors",
+          "image_textualization(filtered)",
+          "ureader_cap",
+          "sharegpt4o",
+          "sharegpt4v(coco)",
+          "sharegpt4v(llava)",
+          "sharegpt4v(sam)",
+          "sharegpt4v(knowledge)",
+          "laion_gpt4v",
+          "textcaps",
+          "screen2words",
+          "vistext",
+          "Flickr30k"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "vqa_通用问答__zh",
+      "bucket": "zh",
+      "weight": 0.2,
+      "render": "zh",
+      "max_share_per_dataset": 0.22,
+      "filter": {
+        "dataset": [
+          "objects365_qa",
+          "lnqa",
+          "visualwebinstruct(filtered)",
+          "allava_vflan",
+          "vision_flan(filtered)",
+          "mmevol",
+          "LLaVA_Instruct_150K",
+          "tallyqa",
+          "cambrian(filtered)_processed",
+          "vqav2",
+          "a_okvqa",
+          "aokvqa",
+          "cocoqa",
+          "visual7w",
+          "idk",
+          "lrv_normal(filtered)",
+          "oodvqa",
+          "sketchyvqa",
+          "vizwiz(mathv360k)",
+          "art",
+          "yesbut",
+          "drivelm",
+          "spark",
+          "indoor_qa",
+          "wildvision",
+          "the_cauldron"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "vqa_通用问答__en",
+      "bucket": "en",
+      "weight": 0.05,
+      "render": "en",
+      "max_share_per_dataset": 0.22,
+      "filter": {
+        "dataset": [
+          "objects365_qa",
+          "lnqa",
+          "visualwebinstruct(filtered)",
+          "allava_vflan",
+          "vision_flan(filtered)",
+          "mmevol",
+          "LLaVA_Instruct_150K",
+          "tallyqa",
+          "cambrian(filtered)_processed",
+          "vqav2",
+          "a_okvqa",
+          "aokvqa",
+          "cocoqa",
+          "visual7w",
+          "idk",
+          "lrv_normal(filtered)",
+          "oodvqa",
+          "sketchyvqa",
+          "vizwiz(mathv360k)",
+          "art",
+          "yesbut",
+          "drivelm",
+          "spark",
+          "indoor_qa",
+          "wildvision",
+          "the_cauldron"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "reasoning_视觉推理__zh",
+      "bucket": "zh",
+      "weight": 0.056,
+      "render": "zh",
+      "max_share_per_dataset": 0.25,
+      "filter": {
+        "dataset": [
+          "clevr",
+          "clevr_math",
+          "clevr_math(mathv360k)",
+          "super_clevr(mathv360k)",
+          "raven",
+          "nlvr2",
+          "mimic_cgd",
+          "iconqa",
+          "iconqa(mathv360k)",
+          "spatialsense",
+          "vsr",
+          "spot_the_diff",
+          "mmra",
+          "geomverse",
+          "RefCOCO"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "reasoning_视觉推理__en",
+      "bucket": "en",
+      "weight": 0.014,
+      "render": "en",
+      "max_share_per_dataset": 0.25,
+      "filter": {
+        "dataset": [
+          "clevr",
+          "clevr_math",
+          "clevr_math(mathv360k)",
+          "super_clevr(mathv360k)",
+          "raven",
+          "nlvr2",
+          "mimic_cgd",
+          "iconqa",
+          "iconqa(mathv360k)",
+          "spatialsense",
+          "vsr",
+          "spot_the_diff",
+          "mmra",
+          "geomverse",
+          "RefCOCO"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "ocr_文档__zh",
+      "bucket": "zh",
+      "weight": 0.136,
+      "render": "zh",
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "DoclingMatix",
+          "olmOCR-mix-0225-documents",
+          "olmOCR-mix-0225-books",
+          "ureader_qa_processed",
+          "ureader_ie",
+          "ureader_kg_processed",
+          "ocrvqa",
+          "textvqa",
+          "docvqa",
+          "st_vqa",
+          "est_vqa",
+          "textocr(gpt4v)",
+          "cocotext",
+          "ctw",
+          "visualmrc",
+          "pdfvqa",
+          "slidevqa",
+          "infographic_vqa",
+          "infographic_vqa_llava_format",
+          "infographic(gpt4v)",
+          "sroie",
+          "funsd",
+          "svrd",
+          "invoices_receipts",
+          "hw_squad",
+          "llavar_gpt4_20k",
+          "synthdog",
+          "tal_ocr_eng",
+          "k12_printing",
+          "datik",
+          "iam",
+          "bentham",
+          "imgur5k",
+          "wordart",
+          "iiit5k",
+          "orand_car_a",
+          "handwriting_forms",
+          "maptext",
+          "rendered_text",
+          "chrome_writting"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "ocr_文档__en",
+      "bucket": "en",
+      "weight": 0.034,
+      "render": "en",
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "DoclingMatix",
+          "olmOCR-mix-0225-documents",
+          "olmOCR-mix-0225-books",
+          "ureader_qa_processed",
+          "ureader_ie",
+          "ureader_kg_processed",
+          "ocrvqa",
+          "textvqa",
+          "docvqa",
+          "st_vqa",
+          "est_vqa",
+          "textocr(gpt4v)",
+          "cocotext",
+          "ctw",
+          "visualmrc",
+          "pdfvqa",
+          "slidevqa",
+          "infographic_vqa",
+          "infographic_vqa_llava_format",
+          "infographic(gpt4v)",
+          "sroie",
+          "funsd",
+          "svrd",
+          "invoices_receipts",
+          "hw_squad",
+          "llavar_gpt4_20k",
+          "synthdog",
+          "tal_ocr_eng",
+          "k12_printing",
+          "datik",
+          "iam",
+          "bentham",
+          "imgur5k",
+          "wordart",
+          "iiit5k",
+          "orand_car_a",
+          "handwriting_forms",
+          "maptext",
+          "rendered_text",
+          "chrome_writting"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "chart_table_图表__zh",
+      "bucket": "zh",
+      "weight": 0.096,
+      "render": "zh",
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "Unichart",
+          "SynthChartNet",
+          "dvqa",
+          "mmc_instruct",
+          "plotqa",
+          "CoSyn_400k_chart",
+          "figureqa",
+          "figureqa(mathv360k)",
+          "chart2text",
+          "chartqa",
+          "CoSyn_400k_table",
+          "robut_wikisql",
+          "robut_wtq",
+          "robut_sqa",
+          "vqaonbd",
+          "mapqa",
+          "mapqa(mathv360k)",
+          "hitab",
+          "multihiertt",
+          "finqa",
+          "tat_qa",
+          "tat_dqa",
+          "sujet_finance",
+          "lrv_chart"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "chart_table_图表__en",
+      "bucket": "en",
+      "weight": 0.024,
+      "render": "en",
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "Unichart",
+          "SynthChartNet",
+          "dvqa",
+          "mmc_instruct",
+          "plotqa",
+          "CoSyn_400k_chart",
+          "figureqa",
+          "figureqa(mathv360k)",
+          "chart2text",
+          "chartqa",
+          "CoSyn_400k_table",
+          "robut_wikisql",
+          "robut_wtq",
+          "robut_sqa",
+          "vqaonbd",
+          "mapqa",
+          "mapqa(mathv360k)",
+          "hitab",
+          "multihiertt",
+          "finqa",
+          "tat_qa",
+          "tat_dqa",
+          "sujet_finance",
+          "lrv_chart"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "math_数学__zh",
+      "bucket": "zh",
+      "weight": 0.064,
+      "render": "zh",
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "mavis_math_rule_geo",
+          "mavis_math_metagen",
+          "CoSyn_400k_math",
+          "geo170k(align)",
+          "geo170k(qa)",
+          "geoqa+(mathv360k)",
+          "geometry3k(mathv360k)",
+          "geo3k",
+          "geos(mathv360k)",
+          "unigeo(mathv360k)",
+          "intergps",
+          "tabmwp",
+          "tabmwp(mathv360k)",
+          "latexformulas",
+          "SynthFormulaNet",
+          "mathwriting-google",
+          "hme100k",
+          "latex_handwritten"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "math_数学__en",
+      "bucket": "en",
+      "weight": 0.016,
+      "render": "en",
+      "max_share_per_dataset": 0.15,
+      "filter": {
+        "dataset": [
+          "mavis_math_rule_geo",
+          "mavis_math_metagen",
+          "CoSyn_400k_math",
+          "geo170k(align)",
+          "geo170k(qa)",
+          "geoqa+(mathv360k)",
+          "geometry3k(mathv360k)",
+          "geo3k",
+          "geos(mathv360k)",
+          "unigeo(mathv360k)",
+          "intergps",
+          "tabmwp",
+          "tabmwp(mathv360k)",
+          "latexformulas",
+          "SynthFormulaNet",
+          "mathwriting-google",
+          "hme100k",
+          "latex_handwritten"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "diagram_科学图示__zh",
+      "bucket": "zh",
+      "weight": 0.04,
+      "render": "zh",
+      "max_share_per_dataset": 0.3,
+      "filter": {
+        "dataset": [
+          "arxivqa",
+          "CoSyn_400k_document",
+          "CoSyn_400k_diagram",
+          "CoSyn_400k_graphic",
+          "CoSyn_400k_music",
+          "CoSyn_400k_circuit",
+          "CoSyn_400k_chemical",
+          "CoSyn_400k_nutrition",
+          "datikz",
+          "ai2d_merged",
+          "scienceqa",
+          "scienceqa(nona_context)",
+          "tqa",
+          "blockdiagramhandwritten",
+          "blockdiagramcomputerized",
+          "diagram_image_to_text"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "diagram_科学图示__en",
+      "bucket": "en",
+      "weight": 0.01,
+      "render": "en",
+      "max_share_per_dataset": 0.3,
+      "filter": {
+        "dataset": [
+          "arxivqa",
+          "CoSyn_400k_document",
+          "CoSyn_400k_diagram",
+          "CoSyn_400k_graphic",
+          "CoSyn_400k_music",
+          "CoSyn_400k_circuit",
+          "CoSyn_400k_chemical",
+          "CoSyn_400k_nutrition",
+          "datikz",
+          "ai2d_merged",
+          "scienceqa",
+          "scienceqa(nona_context)",
+          "tqa",
+          "blockdiagramhandwritten",
+          "blockdiagramcomputerized",
+          "diagram_image_to_text"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "gui_界面代码__zh",
+      "bucket": "zh",
+      "weight": 0.028,
+      "render": "zh",
+      "max_share_per_dataset": 0.3,
+      "filter": {
+        "dataset": [
+          "aguvis-stage-1",
+          "screenqa",
+          "groundui",
+          "websight",
+          "alfworldgpt",
+          "SynthCodeNet"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "gui_界面代码__en",
+      "bucket": "en",
+      "weight": 0.007,
+      "render": "en",
+      "max_share_per_dataset": 0.3,
+      "filter": {
+        "dataset": [
+          "aguvis-stage-1",
+          "screenqa",
+          "groundui",
+          "websight",
+          "alfworldgpt",
+          "SynthCodeNet"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "domain_专业领域__zh",
+      "bucket": "zh",
+      "weight": 0.004,
+      "render": "zh",
+      "max_share_per_dataset": 0.6,
+      "filter": {
+        "dataset": [
+          "pathvqa",
+          "pmc_vqa(mathv360k)",
+          "vqarad"
+        ],
+        "with_images": true
+      }
+    },
+    {
+      "name": "domain_专业领域__en",
+      "bucket": "en",
+      "weight": 0.001,
+      "render": "en",
+      "max_share_per_dataset": 0.6,
+      "filter": {
+        "dataset": [
+          "pathvqa",
+          "pmc_vqa(mathv360k)",
+          "vqarad"
+        ],
+        "with_images": true
+      }
+    }
+  ]
+}
