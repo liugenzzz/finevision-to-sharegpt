@@ -240,11 +240,19 @@ def pick(
     return out, len(out), avail, over_cap, per
 
 
-def fetch_rows(pool: Any, ids: list[int], chunk: int = 2000):
-    """按 id 回表取正文，产出和 db-export 完全一样的 ShareGPT 记录。
+def fetch_rows(pool: Any, ids: list[int], chunk: int = 2000, render: str = "auto"):
+    """按 id 回表取正文，产出 ShareGPT 记录。
 
-    中文样本取译文，英文样本取原文——和 iter_export_records 的口径保持一致，
-    两条路导出的东西必须能对得上，否则同一批数据两种写法会得到不同结果。
+    ``render`` 决定**读哪一列**，这才是中英之分的真正开关：
+
+    - ``auto``：和 db-export 同口径，zh 行取译文、en 行取原文。
+    - ``zh``：一律取译文，没有译文的行跳过。
+    - ``en``：一律取英文原文——即使这条已经被翻成中文了。
+
+    之所以要这个：跑的时候 ``chinese_ratio=1.0`` 把所有行都标成了 zh，同时
+    ``store_conversations=true`` 又把英文原文留在了库里。也就是说同一条样本
+    中英都有，中英比例是**查询时挑哪一列**的事，不用重翻。只按 lang_assigned
+    过滤的话永远只能拿到中文。
     """
 
     from finevision_to_sharegpt.db.mysql_ledger import _load_json
@@ -271,7 +279,13 @@ def fetch_rows(pool: Any, ids: list[int], chunk: int = 2000):
             if row is None:
                 continue
             translated = _load_json(row[5])
-            conversations = translated if row[4] == "zh" and translated else _load_json(row[3])
+            source = _load_json(row[3])
+            if render == "zh":
+                conversations = translated
+            elif render == "en":
+                conversations = source
+            else:
+                conversations = translated if row[4] == "zh" and translated else source
             if not conversations:
                 continue
             images = _load_json(row[2]) or []
@@ -310,6 +324,11 @@ def main() -> int:
     split_by_group = cfg.get("split_by_group", False)
     if not args.dry_run and not out_path:
         sys.exit("[FATAL] 需要 output（配置里写或 --out 传）")
+
+    renders = {g["name"]: str(g.get("render") or cfg.get("render") or "auto") for g in groups}
+    bad = {n: r for n, r in renders.items() if r not in ("auto", "zh", "en")}
+    if bad:
+        sys.exit(f"[FATAL] render 只能是 auto/zh/en，这几组写错了: {bad}")
 
     rng = random.Random(seed)
     mysql = load_mysql_config(cfg["mysql"])
@@ -402,6 +421,20 @@ def main() -> int:
                 )
                 print("             要么调低本组 weight/total，要么放宽封顶——现在是保了比例牺牲了多样性。")
 
+        # 各组独立采样，组间不去重。中英分组时同一条样本会被两边各抽一次
+        # ——双语训练可能正是想要的，但得让人知道，别当成一万条不同的数据。
+        seen: dict[int, list[str]] = defaultdict(list)
+        for nm, ids in picked.items():
+            for i in set(ids):
+                seen[i].append(nm)
+        overlap = {i: names for i, names in seen.items() if len(names) > 1}
+        if overlap:
+            pairs = Counter(tuple(sorted(v)) for v in overlap.values())
+            print(f"    [注] {len(overlap)} 条样本被多个组同时抽到（组间不去重）：")
+            for names, n in pairs.most_common(3):
+                print(f"         {' + '.join(names)}: {n} 条")
+            print("         中英分组时这是正常的——同一条样本两种语言各一份。")
+
         grand = sum(actual.values())
         print(f"    合计 {grand}")
         if grand:
@@ -418,7 +451,7 @@ def main() -> int:
             out_p.mkdir(parents=True, exist_ok=True)
             for nm, ids in picked.items():
                 with (out_p / f"{nm}.jsonl").open("w", encoding="utf-8") as fh:
-                    for record in fetch_rows(pool, ids):
+                    for record in fetch_rows(pool, ids, render=renders[nm]):
                         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
                         stat[nm] += 1
                 print(f"    {nm}.jsonl  {stat[nm]} 条")
@@ -432,7 +465,7 @@ def main() -> int:
                 by_group[n].append(i)
             cache: dict[tuple[str, int], str] = {}
             for n, ids in by_group.items():
-                for sid, record in zip(ids, fetch_rows(pool, ids)):
+                for sid, record in zip(ids, fetch_rows(pool, ids, render=renders[n])):
                     cache.setdefault((n, sid), json.dumps(record, ensure_ascii=False))
             with out_p.open("w", encoding="utf-8") as fh:
                 for n, i in order:
@@ -463,6 +496,7 @@ def main() -> int:
                     "weight": g.get("weight"),
                     "count": g.get("count"),
                     "balance_by": g.get("balance_by"),
+                    "render": renders[g["name"]],
                     "max_share_per_dataset": g.get("max_share_per_dataset"),
                     "available": avail[g["name"]],
                     "target": targets.get(g["name"], 0),

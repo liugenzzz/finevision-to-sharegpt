@@ -39,8 +39,7 @@
           "screen2words",
           "vistext",
           "Flickr30k"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -75,8 +74,7 @@
           "indoor_qa",
           "wildvision",
           "the_cauldron"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -100,8 +98,7 @@
           "mmra",
           "geomverse",
           "RefCOCO"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -150,8 +147,7 @@
           "maptext",
           "rendered_text",
           "chrome_writting"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -184,8 +180,7 @@
           "tat_dqa",
           "sujet_finance",
           "lrv_chart"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -212,8 +207,7 @@
           "mathwriting-google",
           "hme100k",
           "latex_handwritten"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -238,8 +232,7 @@
           "blockdiagramhandwritten",
           "blockdiagramcomputerized",
           "diagram_image_to_text"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -254,8 +247,7 @@
           "websight",
           "alfworldgpt",
           "SynthCodeNet"
-        ],
-        "lang": "zh"
+        ]
       }
     },
     {
@@ -267,9 +259,9 @@
           "pathvqa",
           "pmc_vqa(mathv360k)",
           "vqarad"
-        ],
-        "lang": "zh"
+        ]
       }
     }
-  ]
+  ],
+  "render": "zh"
 }

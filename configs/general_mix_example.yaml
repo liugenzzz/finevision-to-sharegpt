@@ -11,6 +11,14 @@ total: 200000            # 权重组瓜分的总量。不写则按「不失真�
 seed: 42                   # 固定种子，同一份配置每次抽出来的是同一批
 shuffle: true              # 采样随机 + 输出打散；false 则按 id 顺序取
 on_shortfall: scale        # scale 等比缩小保比例 | take 有多少拿多少 | repeat 重复补足 | error 报错
+
+render: zh                 # 读哪一列：zh 译文 | en 英文原文 | auto 按 lang_assigned 走
+#
+# 这次跑的 chinese_ratio=1.0，所有行的 lang_assigned 都是 zh，所以
+# filter.lang 筛不出东西来；而 store_conversations=true 又把英文原文留在了
+# 库里。也就是说同一条样本中英都有，**中英之分是读哪一列，不是筛哪些行**。
+# 想要中英混合就分两组、各给一个 render，见文件末尾的例子。
+# 组级 render 覆盖这里的全局值。
 output: ./out/general_mix_v1.jsonl
 split_by_group: false      # true 则 output 当作目录，每个类别一个 jsonl
 
@@ -36,7 +44,6 @@ groups:
     weight: 0.22
     max_share_per_dataset: 0.18
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "densefusion_1m"
         - "allava_laion"
@@ -61,7 +68,6 @@ groups:
     weight: 0.25
     max_share_per_dataset: 0.22
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "objects365_qa"
         - "lnqa"
@@ -94,7 +100,6 @@ groups:
     weight: 0.07
     max_share_per_dataset: 0.25
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "clevr"
         - "clevr_math"
@@ -116,7 +121,6 @@ groups:
     weight: 0.17
     max_share_per_dataset: 0.15
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "DoclingMatix"
         - "olmOCR-mix-0225-documents"
@@ -163,7 +167,6 @@ groups:
     weight: 0.12
     max_share_per_dataset: 0.15
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "Unichart"
         - "SynthChartNet"
@@ -194,7 +197,6 @@ groups:
     weight: 0.08
     max_share_per_dataset: 0.15
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "mavis_math_rule_geo"
         - "mavis_math_metagen"
@@ -219,7 +221,6 @@ groups:
     weight: 0.05
     max_share_per_dataset: 0.3
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "arxivqa"
         - "CoSyn_400k_document"
@@ -242,7 +243,6 @@ groups:
     weight: 0.035
     max_share_per_dataset: 0.3
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "aguvis-stage-1"
         - "screenqa"
@@ -255,7 +255,6 @@ groups:
     weight: 0.005
     max_share_per_dataset: 0.6
     filter:
-      lang: zh                 # 只要中文侧；要英文原文写 en，两个都要就删掉这行
       dataset:
         - "pathvqa"
         - "pmc_vqa(mathv360k)"
@@ -264,7 +263,7 @@ groups:
 # --- 其他可用的 filter 字段 ---
 #   dataset_prefix: CoSyn_400k_    # 前缀成组，省得把二十个名字抄一遍（可给 list）
 #   exclude_dataset: [densefusion_1m]
-#   source_lang: zh                # 源文本本来就是中文的集合（和 lang 是两回事）
+#   source_lang: zh                # 源文本本来就是中文的集合（和 render 是两回事）
 #   with_images: true              # 只要有图的；no_images / min_images: 2 同理
 #   batch_id: run5m
 #   status: done                   # 默认就是 done，pending/rejected 没有可用产出
@@ -274,3 +273,18 @@ groups:
 #   count: 5000
 #   filter:
 #     dataset: Flickr30k
+
+# --- 中英混合：同一批行，分两组各读一列 ---
+# 注意组间不去重，同一条样本会中英各出现一次（双语训练通常正是要这个）。
+# 脚本会在 dry-run 里报出重叠条数。
+#
+# render: auto
+# groups:
+#   - name: caption_zh
+#     weight: 0.7
+#     render: zh
+#     filter: {dataset: [densefusion_1m, Flickr30k]}
+#   - name: caption_en
+#     weight: 0.3
+#     render: en
+#     filter: {dataset: [densefusion_1m, Flickr30k]}
