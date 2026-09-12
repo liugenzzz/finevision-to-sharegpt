@@ -4,6 +4,49 @@
 
 ---
 
+## 2026-09-12 · 图片路径怎么拼、能不能读到，加个脚本直接验
+
+用户问图片路径。把整条链核清楚了，并做成能跑的检查，别再靠对着看。
+
+### 链路
+
+`images_root` 没显式设 → `output_jsonl.parent / "images"` = `output/run5m/images`
+→ `ImageStore(output_root=images_root.parent, images_dir=images_root.name)`
+→ 相对路径 **`images/<数据集>/<sha256>.<ext>`**，文件落在
+`output_root / 相对路径`，即 `<运行目录>/output/run5m/images/<数据集>/<hash>.jpg`。
+
+**前缀就是 `images_root` 的目录名**，写死进库里。`output_jsonl` 是相对路径，
+按执行命令时的当前目录解析。
+
+### 危险在哪
+
+用户说图片现在在 `.../mm_images/fv_images`。**如果那个 `fv_images` 就是当年的
+`images` 目录改了名或搬了位置，库里的 `images/...` 前缀就和盘上对不上**，
+而且不会报错——训练时图片静默读不到。这就是 `e22b1cf` 标过的坑，现在能验了。
+
+### `scripts/check_image_paths.py`
+
+抽 200 条路径，把候选根逐个试一遍报命中率。一条都不中时，拿根下面**实际存在的
+子目录**当替代前缀再试，直接把修法指出来：
+
+```
+❌ .../imgroot_renamed  命中 0/3 (0%)
+   但把前缀 'images' 换成 'fv_images' 后命中 3/3。
+   → 图片目录被改过名。要么改回叫 'images'，要么做个软链：
+     ln -s .../fv_images .../images
+```
+
+只读，`ensure_schema=False`。
+
+### 对另一侧的影响
+
+- **`images_root` 改了会让新旧记录前缀不一致**，同一个数据集一半读得到一半读不到，
+  静默少一半样本。要改就得连同已产出的记录一起改写，或者保持目录名仍叫 `images`。
+  这条之前只写在日志里，现在有脚本能立刻验出来。
+- 没动任何现有代码，只新增脚本。
+
+---
+
 ## 2026-09-12 · 中英之分是「读哪一列」，不是「筛哪些行」——导出加 render
 
 用户问抽样能不能控制中英。查完发现我先前给的 `filter.lang` **在这批数据上是死的**，
