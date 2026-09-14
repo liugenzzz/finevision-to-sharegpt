@@ -4,6 +4,58 @@
 
 ---
 
+## 2026-09-14 · 抽样提速：sample_source 加 category 列 + 覆盖索引，候选查询去重
+
+用户反馈 500 万抽 100 万花了一小时。定位后做了两项，**全量入库前做最便宜**。
+
+### 瓶颈定位
+
+他 dry-run 的输出最后一行是 `耗时 5057s`（84 分钟），而 `--dry-run` **不读正文、
+不写文件**——只取候选 id、算配额、采样。所以那一小时全在 `fetch_candidates`。
+
+两个原因：
+
+1. **同一批候选查了两遍**。18 个组里中英两档的 `filter` 完全一样（`render` 只影响
+   导出时读哪一列，跟 SQL 无关），9 个类别合计 412 万候选，乘 2 = 826 万行拉进 Python。
+2. **`dataset IN (18~40 个值)` + `ORDER BY id` 逼出 filesort**。
+
+EXPLAIN 实测（小表，索引选择不代表大表，但 **filesort 的有无是结构性的**）：
+
+```
+category='caption'        key: idx_category   Extra: Using index condition
+dataset IN (...)          key: idx_expire     Extra: ...Using filesort     ← 大头
+```
+
+`(category, status, id)` 下同一类别的输出天然按 id 有序，`ORDER BY id` 变成零成本。
+
+### 改了什么
+
+**schema**：`sample_source` 加 `category VARCHAR(64) NOT NULL DEFAULT ''`，
+加索引 `idx_category (category, status, id)`。列和索引都走就地迁移
+（MySQL 没有 `ADD COLUMN/INDEX IF NOT EXISTS`，查 `information_schema` 再决定），
+**重跑一次 `db-init` 就补上**，幂等。
+
+**`scripts/fill_category.py`**：按抽样计划的 `categories.*.match` 回填。
+按数据集逐个 UPDATE 而不是一条打全表——几百万行长时间持锁很难看。
+预览/`--apply` 两段式，幂等，不在定义里的数据集保持空并单独列出
+（多半是 `_excluded` 的纯文本集，空着是对的）。
+
+**类别定义只留一份**，在抽样计划里，**没有塞进数据集注册表**：同一份分类落在两
+个地方迟早分叉，而重跑脚本就能按新定义重贴标签。
+
+**导出**：`filter.category` 支持；候选按 `(filter, balance_by, 有无封顶)` 去重共享。
+这里有个坑我处理了——`exclude_from` 会改候选，而候选现在是共享的，**必须写时复制**，
+否则会把同 filter 的兄弟组的候选一起剔掉。
+
+### 对另一侧的影响
+
+- **`db-init` 要重跑一次**（补列 + 补索引 + 重建视图）。
+- **灌库之后记得跑 `fill_category.py`**，否则新行的 `category` 是空的，
+  按类别抽会漏掉它们。这是目前唯一需要人记住的一步——没做进管线，理由见上。
+- 加列加索引在 2500 万行上很贵，**全量灌库之前做完**。用户现在只有 500 万。
+
+---
+
 ## 2026-09-14 · 导出加 exclude_from；100 万配置里中英不再互相重复
 
 用户要把 50 万提到 100 万，比例不变。算了一下：**能抽满**（没有组超出池子，

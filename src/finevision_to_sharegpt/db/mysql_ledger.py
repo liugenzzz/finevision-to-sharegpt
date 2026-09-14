@@ -174,6 +174,11 @@ class MySQLLedger(ConsumptionLedger):
                 cursor.execute(query, params)
                 if int(cursor.fetchone()[0]) == 0:
                     cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            for table, index, columns in schema.added_indexes():
+                query, params = schema.missing_index_query(table, index)
+                cursor.execute(query, params)
+                if int(cursor.fetchone()[0]) == 0:
+                    cursor.execute(f"ALTER TABLE {table} ADD INDEX {index} {columns}")
 
         self.pool.run(create)
 

@@ -78,6 +78,10 @@ def build_where(f: dict[str, Any]) -> tuple[str, list[Any]]:
     conds.append("status = %s")
     params.append(str(f.get("status") or "done"))
 
+    if f.get("category"):
+        # 走 (category, status, id) 覆盖索引，一段连续扫描。比 dataset IN (几十个)
+        # 扫十几段再归并排序快一个数量级，是大表上取候选的推荐写法。
+        in_or_eq("category", f["category"])
     if f.get("dataset"):
         in_or_eq("dataset", f["dataset"])
     if f.get("exclude_dataset"):
@@ -346,8 +350,27 @@ def main() -> int:
         print("[1/3] 统计各组候选量 ...")
         cands: dict[str, dict[str, list[int]]] = {}
         avail: dict[str, int] = {}
+        # 中英两档的 filter 完全一样（render 只影响导出时读哪一列，跟 SQL 无关），
+        # 不去重就把每个类别的候选查两遍。几百万行一遍，这是耗时的大头。
+        # 键要带上 balance 口径，因为它决定 SELECT 里多不多带一列。
+        shared: dict[str, dict[str, list[int]]] = {}
+        reused = 0
         for g in groups:
-            buckets = fetch_candidates(pool, g)
+            key = json.dumps(
+                [
+                    g.get("filter") or {},
+                    g.get("balance_by"),
+                    bool(g.get("max_share_per_dataset")),
+                ],
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            if key in shared:
+                buckets = shared[key]
+                reused += 1
+            else:
+                buckets = fetch_candidates(pool, g)
+                shared[key] = buckets
             cands[g["name"]] = buckets
             avail[g["name"]] = sum(len(v) for v in buckets.values())
             note = ""
@@ -356,6 +379,8 @@ def main() -> int:
             elif g.get("balance_by"):
                 note = f"  (按 {g['balance_by']} 分 {len(buckets)} 桶均分)"
             print(f"    {g['name']:<22} 候选 {avail[g['name']]:>9}{note}")
+        if reused:
+            print(f"    （{reused} 个组的 filter 与前面某组相同，候选复用，少查 {reused} 遍）")
 
         print("[2/3] 算目标条数 ...")
         explicit = {g["name"]: int(g["count"]) for g in groups if g.get("count")}
@@ -410,6 +435,8 @@ def main() -> int:
                     )
                 drop = set().union(*(taken[x] for x in avoid))
                 before = sum(len(v) for v in cands[nm].values())
+                # 候选是去重共享的，这里必须新建一份，否则会把同 filter 的
+                # 兄弟组的候选一起剔掉。
                 cands[nm] = {
                     k: [i for i in v if i not in drop] for k, v in cands[nm].items()
                 }

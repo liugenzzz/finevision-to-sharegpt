@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sample_source (
   image_count      SMALLINT        NOT NULL DEFAULT 0,
   status           ENUM('pending','claimed','done','failed','rejected') NOT NULL DEFAULT 'pending',
   source_lang      VARCHAR(16)     NOT NULL DEFAULT 'en',
+  category         VARCHAR(64)     NOT NULL DEFAULT '',
   lang_assigned    ENUM('zh','en')          DEFAULT NULL,
   reject_reason    VARCHAR(255)             DEFAULT NULL,
   batch_id         VARCHAR(64)              DEFAULT NULL,
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS sample_source (
   PRIMARY KEY (id),
   UNIQUE KEY uk_ver_sample (version_id, sample_id(255)),
   KEY idx_pick (dataset, status, id),
+  KEY idx_category (category, status, id),
   KEY idx_scan (version_id, parquet_name, row_index),
   KEY idx_batch (batch_id),
   KEY idx_expire (status, claim_expires_at)
@@ -88,7 +90,30 @@ _TEMPLATES = (DATASET_VERSION, SAMPLE_SOURCE, SAMPLE_TRANSLATION, DATASET_CURSOR
 # information_schema 再决定要不要 ALTER。
 _ADDED_COLUMNS = (
     ("sample_source", "source_lang", "VARCHAR(16) NOT NULL DEFAULT 'en' AFTER status"),
+    ("sample_source", "category", "VARCHAR(64) NOT NULL DEFAULT '' AFTER source_lang"),
 )
+
+# 索引同理：CREATE TABLE IF NOT EXISTS 不会给已有表补索引，而 MySQL 也没有
+# CREATE INDEX IF NOT EXISTS，只能先查 information_schema。
+# idx_category 是抽样的主力：按类别取候选时 (category, status, id) 是覆盖索引，
+# 一段连续扫描就够，不用像 dataset IN (...) 那样扫十几二十段再归并排序。
+_ADDED_INDEXES = (
+    ("sample_source", "idx_category", "(category, status, id)"),
+)
+
+
+def missing_index_query(table: str, index: str) -> tuple[str, tuple[str, str]]:
+    return (
+        "SELECT COUNT(*) FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s",
+        (table, index),
+    )
+
+
+def added_indexes() -> tuple[tuple[str, str, str], ...]:
+    """Indexes introduced after the first release, for in-place upgrades."""
+
+    return _ADDED_INDEXES
 
 
 def missing_column_query(table: str, column: str) -> tuple[str, tuple[str, str]]:
