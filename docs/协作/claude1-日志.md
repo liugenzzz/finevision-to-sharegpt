@@ -4,6 +4,85 @@
 
 ---
 
+## 2026-09-14 · 给 Claude 2 的接口变更汇总（这一条是给你的，请整条读）
+
+前面几条分头记了细节，这条把**会影响到你那侧写法**的集中列出来。
+读完这条就够，不用回翻。
+
+### 一、灌库之后多了一步，但不用你记
+
+`sample_source` 加了 `category` 列，抽样按类别走覆盖索引。**新灌进来的行
+`category` 是空的，按类别抽样会把它们整个漏掉，而且不报错。**
+
+本来这会变成「你得记住灌完库跑一次 `fill_category.py`」。这种靠人记的约定迟早
+会漏，所以改成让工具自己说——`db-status` 现在会多报一节：
+
+```json
+"uncategorised": {"rows": 4821330, "datasets": [{"dataset": "...", "count": ...}]},
+"uncategorised_note": "…行还没有 category，按类别抽样时会被整个漏掉。跑 scripts/fill_category.py …"
+```
+
+贴完之后这一节**彻底消失**（有回归用例钉着，每次都报等于没报）。
+所以你正常跑 `db-status` 就会看到，不用专门记。
+
+真要跑的话：
+
+```bash
+python3 scripts/fill_category.py <任务配置> --plan configs/sampling_plan_5m.json          # 预览
+python3 scripts/fill_category.py <任务配置> --plan configs/sampling_plan_5m.json --apply
+```
+
+幂等，按数据集逐个 UPDATE（不是一条打全表）。不在类别定义里的集合保持空，
+会单独列出来——那些多半是 `_excluded` 的纯文本集，空着是对的。
+
+### 二、`db-init` 要重跑一次
+
+schema 累计加了 `source_lang`、`category` 两列和 `idx_category` 索引，
+都走就地迁移（查 `information_schema` 再 ALTER，MySQL 没有 IF NOT EXISTS）。
+视图是 `SELECT *`，MySQL 建视图时把列固化，所以也要 `CREATE OR REPLACE`。
+`db-init` 三件事都做，幂等。
+
+**加列加索引在 2500 万行上比在 500 万行上贵得多，全量灌库之前做完。**
+
+### 三、`open_dataset` 多了第四个参数
+
+`open_dataset(dataset, source_path, images_root, source_lang="en")`。
+有默认值所以老调用点不报错，但**不传的话落库永远是 `en`**。
+`zip_pipeline.py:297` 我已经改成传 `dataset.source_lang`，你要是有别的调用点记得跟上。
+
+### 四、`images_root` 现在是绝对路径
+
+`configs/translate_5m.json` / `db_scan_all.json` 指向
+`/mnt/si003010kcx0/mmdata/mm_images/fv_images`。原来是相对路径，按**执行命令时的
+当前目录**解析——换个目录跑就换个地方落盘。你那边若有脚本假设它相对于输出目录，
+要跟着改。
+
+**前缀不能新旧混用**：库里记的前缀就是 `images_root` 的目录名，同一个数据集
+一半 `images/` 一半 `fv_images/` 会让训练静默少掉一半图。改这个值之后跑
+`scripts/check_image_paths.py` 确认命中率是 100%，中间值比全错更难查。
+
+### 五、`db-export` 的口径变了
+
+以前导出的记录**没有 `<image>` 标记**——`claim` 存的是原始轮次，标记是
+`build_sharegpt_record` 之后才加的。现在 `iter_export_records` 会补（对已有标记的
+译文幂等），和文件模式产出完全一致。**你之前若用 db-export 的产出做过验证，
+那批英文样本是缺标记的，结论要重看。**
+
+### 六、我这边的工具清单（都在 `scripts/`，都只读除非标注）
+
+| 脚本 | 干嘛 | 写库 |
+| --- | --- | --- |
+| `check_backend_throughput.py` | 各后端产出/延迟/有效并发 | 否 |
+| `check_image_paths.py` | 图片路径在盘上找不找得到 | 否 |
+| `fix_image_prefix.py` | 改写路径第一段 | `--apply` 才写 |
+| `fill_category.py` | 回填 category | `--apply` 才写 |
+| `export_general_mix.py` | 按配比抽训练集 | 否 |
+
+只读的都显式传 `ensure_schema=False`——默认构造会跑 DDL 补列，对满表且任务
+在跑时是灾难。你以后写连库的脚本也照这个来。
+
+---
+
 ## 2026-09-14 · 抽样提速：sample_source 加 category 列 + 覆盖索引，候选查询去重
 
 用户反馈 500 万抽 100 万花了一小时。定位后做了两项，**全量入库前做最便宜**。

@@ -477,6 +477,31 @@ class MySQLLedger(ConsumptionLedger):
 
         return self.pool.run(query)
 
+    def uncategorised_counts(self, limit: int = 10) -> dict[str, Any]:
+        """还没贴类别标签的行有多少，集中在哪些数据集。
+
+        按类别抽样时空 category 的行**一条都抽不到**，而且不报错。灌完库忘了跑
+        `fill_category.py` 就是这个下场，所以让 `db-status` 每次都把它报出来，
+        而不是指望人记得有这么一步。
+        """
+
+        def query(cursor: Any) -> dict[str, Any]:
+            cursor.execute("SELECT COUNT(*) FROM sample_source WHERE category = ''")
+            total = int(cursor.fetchone()[0])
+            if not total:
+                return {"rows": 0, "datasets": []}
+            cursor.execute(
+                "SELECT dataset, COUNT(*) c FROM sample_source WHERE category = '' "
+                "GROUP BY dataset ORDER BY c DESC LIMIT %s",
+                (limit,),
+            )
+            return {
+                "rows": total,
+                "datasets": [{"dataset": r[0], "count": int(r[1])} for r in cursor.fetchall()],
+            }
+
+        return self.pool.run(query)
+
     def storage_report(self) -> dict[str, Any]:
         """Row counts and on-disk size per table.
 

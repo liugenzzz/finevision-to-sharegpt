@@ -55,12 +55,22 @@ def run_db_status(config_path: Path | str, dataset: str | None = None) -> dict[s
     ledger = _ledger(config)
     try:
         rows = ledger.status_counts(dataset)
+        uncategorised = ledger.uncategorised_counts()
     finally:
         ledger.close()
     totals: dict[str, int] = {}
     for row in rows:
         totals[row["status"]] = totals.get(row["status"], 0) + row["count"]
-    return {"rows": rows, "totals": totals}
+    result: dict[str, Any] = {"rows": rows, "totals": totals}
+    if uncategorised["rows"]:
+        # 静默漏抽比报错难查得多，所以这条无论如何都放进输出。
+        result["uncategorised"] = uncategorised
+        result["uncategorised_note"] = (
+            f"{uncategorised['rows']} 行还没有 category，按类别抽样时会被整个漏掉。"
+            " 跑 scripts/fill_category.py 贴标签；本来就不该入选的集合（纯文本等）"
+            "留空是对的。"
+        )
+    return result
 
 
 def run_db_storage(config_path: Path | str) -> dict[str, Any]:

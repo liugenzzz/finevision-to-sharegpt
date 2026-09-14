@@ -765,3 +765,31 @@ def test_db_export_carries_the_image_token_like_file_mode(tmp_path, clean_databa
     assert from_db == from_file
     tokens = [r["conversations"][0]["value"].count("<image>") for r in from_db.values()]
     assert sorted(tokens) == [1, 2]
+
+
+def test_db_status_flags_rows_that_never_got_a_category(tmp_path, clean_database, mysql_settings):
+    """没贴类别的行按类别抽样时一条都抽不到，而且不报错。
+
+    灌完库忘了跑 fill_category 就是这个下场，所以 db-status 要主动报出来，
+    不能指望人记得有这么一步。
+    """
+
+    from finevision_to_sharegpt.db_commands import run_db_status
+
+    registry = make_zip_dataset(tmp_path, rows=3)
+    config, config_path = write_config(tmp_path, registry, mysql_settings)
+    run_export_zips(config)
+
+    flagged = run_db_status(config_path)
+    assert flagged["uncategorised"]["rows"] == 3
+    assert flagged["uncategorised"]["datasets"][0]["dataset"] == "okvqa"
+    assert "fill_category" in flagged["uncategorised_note"]
+
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+
+    ledger = MySQLLedger(load_mysql_config(mysql_settings), ensure_schema=False)
+    ledger.pool.run(lambda cursor: cursor.execute("UPDATE sample_source SET category = 'caption'"))
+    ledger.close()
+
+    # 贴完之后这一节就该彻底消失，否则每次都报等于没报。
+    assert "uncategorised" not in run_db_status(config_path)
