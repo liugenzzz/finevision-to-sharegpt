@@ -391,14 +391,37 @@ def main() -> int:
 
         print("[3/3] 采样 ...")
         picked: dict[str, list[int]] = {}
+        taken: dict[str, set[int]] = {}
         actual: dict[str, int] = {}
         over_caps: dict[str, int] = {}
         for g in groups:
             nm = g["name"]
+            # exclude_from：中英两组从同一池子独立抽会大量撞车（小类别里英文能有
+            # 九成是中文的同一条）。列出要避开的组，把它们抽走的 id 从候选里剔掉。
+            avoid = g.get("exclude_from") or []
+            if isinstance(avoid, str):
+                avoid = [avoid]
+            if avoid:
+                missing = [x for x in avoid if x not in taken]
+                if missing:
+                    sys.exit(
+                        f"[FATAL] 组 {nm} 的 exclude_from 引用了 {missing}，"
+                        "但它们还没被采样。被引用的组必须排在前面。"
+                    )
+                drop = set().union(*(taken[x] for x in avoid))
+                before = sum(len(v) for v in cands[nm].values())
+                cands[nm] = {
+                    k: [i for i in v if i not in drop] for k, v in cands[nm].items()
+                }
+                after = sum(len(v) for v in cands[nm].values())
+                avail[nm] = after
+                print(f"    {nm:<22} 避开 {' + '.join(avoid)}，候选 {before} -> {after}")
+
             ids, got, av, over, per = pick(
                 cands[nm], targets.get(nm, 0), rng, shortfall, shuffle, nm,
                 g.get("max_share_per_dataset"),
             )
+            taken[nm] = set(ids)
             picked[nm] = ids
             actual[nm] = got
             over_caps[nm] = over
@@ -515,6 +538,7 @@ def main() -> int:
                     "balance_by": g.get("balance_by"),
                     "render": renders[g["name"]],
                     "bucket": bucket_of[g["name"]],
+                    "exclude_from": g.get("exclude_from"),
                     "max_share_per_dataset": g.get("max_share_per_dataset"),
                     "available": avail[g["name"]],
                     "target": targets.get(g["name"], 0),
