@@ -166,3 +166,62 @@ def test_startup_still_wires_the_backfill_when_it_is_needed(tmp_path, monkeypatc
     ds_jsonl, _ = zip_pipeline._dataset_output_paths(config, "chartqa")
     assert ds_jsonl.exists(), "分数据集文件没被补上——backfill 的调用点断了"
     assert len(ds_jsonl.read_text(encoding='utf-8').splitlines()) == 3
+
+
+# -- 改了 images_root 之后，历史记录还得认得出属于哪个数据集 --------------------
+
+
+def test_records_written_under_an_older_images_prefix_still_find_their_dataset():
+    """`images_root` 从 `images` 改成 `fv_images` 之后，历史记录不能变成孤儿。
+
+    数据集名是从记录的图片路径里倒推的。原来按「第一段等于当前 images_root 的
+    目录名」来认，前缀一改，273 万条 `images/<数据集>/…` 的历史记录就全部认不出，
+    于是永远进不了分数据集文件——而 db-restore 正是读那些文件重建账本的。
+    """
+
+    from finevision_to_sharegpt.zip_pipeline import _dataset_safe_name_of_record
+
+    for path in ("images/okvqa/abc.jpg", "fv_images/okvqa/abc.jpg"):
+        assert _dataset_safe_name_of_record({"images": [path]}) == "okvqa"
+
+
+def test_a_record_without_a_dataset_directory_is_not_attributed():
+    """倒推不出来时必须返回 None，不能瞎猜——猜错会把记录写进别人的文件。"""
+
+    from finevision_to_sharegpt.zip_pipeline import _dataset_safe_name_of_record
+
+    assert _dataset_safe_name_of_record({"images": ["abc.jpg"]}) is None
+    assert _dataset_safe_name_of_record({"images": ["images/abc.jpg"]}) is None
+    assert _dataset_safe_name_of_record({"images": []}) is None
+    assert _dataset_safe_name_of_record({}) is None
+
+
+def test_the_backfill_stops_running_every_restart_after_a_prefix_change(tmp_path, monkeypatch):
+    """认不出数据集 → 分文件永远补不齐 → 每次重启都整读一遍产出，且一条都补不进去。
+
+    这是「重启快起来」那次改动被悄悄抵消的路径：判据是字节数相等，而孤儿记录
+    永远凑不齐，于是 _backfill_is_needed 恒为 True。
+    """
+
+    config = make_config(tmp_path)
+    datasets = datasets_for(tmp_path)
+    # 历史前缀写的产出
+    config.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    with config.output_jsonl.open("w", encoding="utf-8") as handle:
+        for index in range(3):
+            handle.write(json.dumps({
+                "id": f"chartqa:p:{index}",
+                "images": [f"images/chartqa/{index}.jpg"],
+                "conversations": [{"from": "human", "value": "hi"}],
+            }, ensure_ascii=False) + "\n")
+
+    monkeypatch.setattr(zip_pipeline, "load_dataset_registry", lambda path: [])
+    monkeypatch.setattr(zip_pipeline, "_selected_datasets", lambda registry, names: datasets)
+
+    zip_pipeline._prepare_zip_run(config, truncate_failed=False)
+
+    ds_jsonl, _ = zip_pipeline._dataset_output_paths(config, "chartqa")
+    assert ds_jsonl.exists(), "历史前缀的记录没能补进分数据集文件"
+    assert len(ds_jsonl.read_text(encoding="utf-8").splitlines()) == 3
+    # 补齐之后就不该再整读了。
+    assert zip_pipeline._backfill_is_needed(config, datasets) is False

@@ -517,15 +517,28 @@ def _write_record(config: ZipTaskConfig, dataset_name: str | None, record: dict[
         append_jsonl(ds_jsonl, record)
 
 
-def _dataset_safe_name_of_record(record: dict[str, Any], images_dir: str) -> str | None:
-    """Recover the (sanitized) dataset name from a record's ``images/<dataset>/...`` path."""
+def _dataset_safe_name_of_record(record: dict[str, Any]) -> str | None:
+    """从记录的图片路径倒推它属于哪个数据集。
+
+    路径形如 `<前缀>/<数据集>/<sha256>.<ext>`，数据集名**永远是倒数第二段**。
+
+    这里刻意不看第一段。原来是拿它和当前 `images_root` 的目录名比对，于是
+    `images_root` 从 `images` 改成 `fv_images` 的那天，273 万条历史记录一夜之间
+    全部认不出数据集——它们再也进不了分数据集文件，而 `db-restore` 正是读那些
+    文件重建账本的；顺带 `_backfill_is_needed` 的字节数判据永远凑不齐，
+    每次重启又要整读一遍产出。前缀是会变的，位置不会。
+
+    调用方拿到名字后还会核对它在不在本次选中的数据集里，所以这里放宽不会
+    把记录写进别人的文件。
+    """
+
     images = record.get("images") or []
     if not images:
         return None
     parts = str(images[0]).replace("\\", "/").split("/")
-    if len(parts) >= 3 and parts[0] == images_dir:
-        return parts[1]
-    return None
+    if len(parts) < 3:
+        return None
+    return parts[-2]
 
 
 def _file_size(path: Path) -> int:
@@ -561,7 +574,6 @@ def _backfill_is_needed(
 
 
 def _backfill_dataset_jsonls(config: ZipTaskConfig, datasets: list[tuple[RegisteredDataset, DatasetRequest]]) -> None:
-    images_dir = config.images_root.name
     ds_jsonl_by_safe: dict[str, Path] = {}
     existing_by_safe: dict[str, set[str]] = {}
     for dataset, _request in datasets:
@@ -574,7 +586,7 @@ def _backfill_dataset_jsonls(config: ZipTaskConfig, datasets: list[tuple[Registe
             if record.get("id") is not None
         }
     for record in iter_json_records(config.output_jsonl):
-        safe = _dataset_safe_name_of_record(record, images_dir)
+        safe = _dataset_safe_name_of_record(record)
         if safe is None or safe not in ds_jsonl_by_safe:
             continue
         record_id = record.get("id")
