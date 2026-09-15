@@ -1,0 +1,35 @@
+{
+  "_comment": "CPT 语料抽取。实测均值：中文 742 字符/篇（3.996 亿行/562 GB），英文 2556 字符/篇（8.0 亿行/1172 GB）。各取 500 万条约合 26.5 + 31.9 = 58 亿 tokens。正文不进库，只把「每个分片读到第几行」记进 dataset_cursor——下次跑接着往后读，天然不重复。分片按种子随机挑，不是从头顺着拿。chars_per_token 是估算用的，中文 1.4、英文 4.0 是经验值；真要准就拿目标模型的分词器跑一小批校准，这个数只影响 target_tokens 的换算。 avg_chars / rows_per_shard 是 probe_text_corpus.py 的实测值，只给 dry-run 换算「目标 token 约等于多少条、约需几个分片」，不影响真跑。",
+  "seed": 42,
+  "output": "./out/cpt_v1/",
+  "batch_id": "cpt_v1",
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "fv",
+    "password": "${FV_MYSQL_PASSWORD}",
+    "database": "finevision",
+    "pool_size": 2,
+    "on_connect_error": "fail"
+  },
+  "corpora": [
+    {
+      "name": "ultrafineweb_zh_l3",
+      "path": "/mnt/si003010kcx0/mmdata/mm_general/Ultra-FineWeb-L3/Ultra-FineWeb-L3/data/ultrafineweb_zh_l3",
+      "text_column": "content",
+      "target_docs": 5000000,
+      "chars_per_token": 1.4,
+      "avg_chars": 742,
+      "rows_per_shard": 712295
+    },
+    {
+      "name": "ultrafineweb_en_l3",
+      "path": "/mnt/si003010kcx0/mmdata/mm_general/Ultra-FineWeb-L3/Ultra-FineWeb-L3/data/ultrafineweb_en_l3",
+      "text_column": "content",
+      "target_docs": 5000000,
+      "chars_per_token": 4.0,
+      "avg_chars": 2556,
+      "rows_per_shard": 684935
+    }
+  ]
+}

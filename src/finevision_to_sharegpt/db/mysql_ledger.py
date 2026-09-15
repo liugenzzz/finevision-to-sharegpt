@@ -484,6 +484,26 @@ class MySQLLedger(ConsumptionLedger):
 
         return self.pool.run(query)
 
+    def cursor_progress(self, version: DatasetVersion) -> dict[str, int]:
+        """这个版本已经消费到什么程度：几个分片有水位线、累计多少行。
+
+        纯文本语料不建行级账本，水位线就是全部进度记录，所以得能一句话问出来。
+        """
+
+        if version.version_id is None:
+            return {"shards": 0, "rows": 0}
+
+        def query(cursor: Any) -> dict[str, int]:
+            cursor.execute(
+                "SELECT COUNT(*), COALESCE(SUM(max_scanned_row_index + 1), 0) "
+                "  FROM dataset_cursor WHERE version_id = %s",
+                (version.version_id,),
+            )
+            row = cursor.fetchone()
+            return {"shards": int(row[0]), "rows": int(row[1])}
+
+        return self.pool.run(query)
+
     def uncategorised_counts(self, limit: int = 10) -> dict[str, Any]:
         """还没贴类别标签的行有多少，集中在哪些数据集。
 
