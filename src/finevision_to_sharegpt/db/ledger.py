@@ -52,7 +52,12 @@ class ConsumptionLedger(ABC):
 
     @abstractmethod
     def open_dataset(
-        self, dataset: str, source_path: Path, images_root: Path, source_lang: str = "en"
+        self,
+        dataset: str,
+        source_path: Path,
+        images_root: Path,
+        source_lang: str = "en",
+        data_format: str = "sharegpt",
     ) -> DatasetVersion: ...
 
     @abstractmethod
@@ -133,7 +138,12 @@ class JsonlLedger(ConsumptionLedger):
         self.completed_ids: set[str] = completed_ids if completed_ids is not None else set()
 
     def open_dataset(
-        self, dataset: str, source_path: Path, images_root: Path, source_lang: str = "en"
+        self,
+        dataset: str,
+        source_path: Path,
+        images_root: Path,
+        source_lang: str = "en",
+        data_format: str = "sharegpt",
     ) -> DatasetVersion:
         return DatasetVersion(dataset=dataset, source_lang=source_lang)
 

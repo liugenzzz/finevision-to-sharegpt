@@ -4,6 +4,52 @@
 
 ---
 
+## 2026-09-15 · dataset_version 加 data_format，CPT 语料不再靠名字认
+
+用户问 CPT 数据入到哪了、要不要加个 pt 属性。查了一下，他的顾虑成立：
+
+```
+dataset    source_file
+testcorpus /.../cptcorpus          <- CPT 语料
+okvqa      /.../zips/okvqa.zip     <- 多模态数据集
+```
+
+并排躺在 `dataset_version` 里，**除了名字没有任何字段能区分**。
+
+### 加在 dataset_version，不是 sample_source
+
+三个理由：
+
+1. CPT 的行**根本不进 `sample_source`**（正文留在 parquet，只记水位线），
+   加在那儿对它毫无作用。
+2. 这是**数据集级别**的属性，不是每行的。
+3. `dataset_version` 只有一百多行，加列不要钱；`sample_source` 是两千多万行。
+
+`data_format VARCHAR(16) NOT NULL DEFAULT 'sharegpt'`，走就地迁移，
+`db-init` 重跑即补。`open_dataset` 多一个 `data_format="sharegpt"` 的默认参数，
+CPT 脚本显式传 `"pt"`。
+
+### db-status 现在答得了「库里到底有什么」
+
+```json
+"datasets_by_format": {"pt": ["ultrafineweb_en_l3", "ultrafineweb_zh_l3"],
+                       "sharegpt": ["okvqa", ...]},
+"pt_corpora": [{"dataset": "ultrafineweb_zh_l3", "shards_tracked": 7}]
+```
+
+加这一节是因为**只看 status 统计会以为库里只有多模态数据**——CPT 语料在
+`sample_source` 里一行都没有，不主动报就等于不存在。回归用例钉着这一点。
+
+### 对另一侧的影响
+
+- `open_dataset` 现在是 `(dataset, source_path, images_root, source_lang="en",
+  data_format="sharegpt")`。**两个可选参数都有默认值**，老调用点不用改；
+  `zip_pipeline` 那个调用点落的就是 `sharegpt`，正确。
+- `db-init` 又要重跑一次（补 `dataset_version.data_format`）。这张表一百多行，
+  秒级。
+
+---
+
 ## 2026-09-15 · CPT 通道：纯文本语料不建行级账本，水位线就是账本
 
 Ultra-FineWeb-L3 要入库做继续预训练。多模态那条路收不了纯文本

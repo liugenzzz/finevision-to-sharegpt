@@ -793,3 +793,34 @@ def test_db_status_flags_rows_that_never_got_a_category(tmp_path, clean_database
 
     # 贴完之后这一节就该彻底消失，否则每次都报等于没报。
     assert "uncategorised" not in run_db_status(config_path)
+
+
+def test_pt_corpora_are_distinguishable_from_multimodal_datasets(
+    tmp_path, clean_database, mysql_settings
+):
+    """CPT 语料和多模态数据集共用 dataset_version，得能靠字段分开而不是靠名字。
+
+    CPT 的行根本不进 sample_source，所以只看 status 统计会以为库里只有多模态。
+    """
+
+    from finevision_to_sharegpt.db.mysql_ledger import MySQLLedger
+    from finevision_to_sharegpt.db_commands import run_db_status
+
+    registry = make_zip_dataset(tmp_path, rows=2)
+    config, config_path = write_config(tmp_path, registry, mysql_settings)
+    run_export_zips(config)
+
+    corpus = tmp_path / "webtext"
+    corpus.mkdir()
+    ledger = MySQLLedger(load_mysql_config(mysql_settings))
+    version = ledger.open_dataset("webtext", corpus, tmp_path, data_format="pt")
+    ledger.note_scanned(version, "part-00000.parquet", 999)
+    ledger.flush()
+    ledger.close()
+
+    status = run_db_status(config_path)
+    assert status["datasets_by_format"]["pt"] == ["webtext"]
+    assert status["datasets_by_format"]["sharegpt"] == ["okvqa"]
+    # 语料在 sample_source 里没有行，但水位线记着它读到哪了。
+    assert status["pt_corpora"] == [{"dataset": "webtext", "shards_tracked": 1}]
+    assert "webtext" not in {row["dataset"] for row in status["rows"]}

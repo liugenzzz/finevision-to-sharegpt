@@ -200,6 +200,7 @@ class MySQLLedger(ConsumptionLedger):
         source_path: Path,
         images_root: Path,
         source_lang: str = "en",
+        data_format: str = "sharegpt",
     ) -> DatasetVersion:
         fingerprint = source_fingerprint(source_path)
 
@@ -207,13 +208,15 @@ class MySQLLedger(ConsumptionLedger):
             cursor.execute(
                 """
                 INSERT INTO dataset_version
-                  (dataset, source_file, source_hash, file_size, file_mtime, images_root, first_seen_at)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                  (dataset, source_file, source_hash, file_size, file_mtime, images_root,
+                   data_format, first_seen_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
                 ON DUPLICATE KEY UPDATE
                   source_file = VALUES(source_file),
                   file_size   = VALUES(file_size),
                   file_mtime  = VALUES(file_mtime),
-                  images_root = VALUES(images_root)
+                  images_root = VALUES(images_root),
+                  data_format = VALUES(data_format)
                 """,
                 (
                     dataset,
@@ -222,6 +225,7 @@ class MySQLLedger(ConsumptionLedger):
                     fingerprint.file_size,
                     fingerprint.file_mtime,
                     str(images_root),
+                    data_format,
                 ),
             )
             cursor.execute(
@@ -479,6 +483,33 @@ class MySQLLedger(ConsumptionLedger):
             )
             return [
                 {"dataset": row[0], "source_hash": row[1], "status": row[2], "count": int(row[3])}
+                for row in cursor.fetchall()
+            ]
+
+        return self.pool.run(query)
+
+    def dataset_inventory(self) -> list[dict[str, Any]]:
+        """库里有哪些数据集版本，各是什么格式、消费到什么程度。
+
+        `sample_source` 只装得下多模态样本，CPT 语料只在 dataset_version 和
+        dataset_cursor 里留痕，所以「库里到底有什么」这个问题得从这儿答。
+        """
+
+        def query(cursor: Any) -> list[dict[str, Any]]:
+            cursor.execute(
+                "SELECT v.dataset, v.data_format, v.source_file, "
+                "       (SELECT COUNT(*) FROM sample_source s WHERE s.version_id = v.id), "
+                "       (SELECT COUNT(*) FROM dataset_cursor c WHERE c.version_id = v.id) "
+                "  FROM dataset_version v ORDER BY v.data_format, v.dataset"
+            )
+            return [
+                {
+                    "dataset": row[0],
+                    "data_format": row[1],
+                    "source": row[2],
+                    "sample_rows": int(row[3]),
+                    "shards_tracked": int(row[4]),
+                }
                 for row in cursor.fetchall()
             ]
 

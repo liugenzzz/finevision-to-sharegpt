@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS dataset_version (
   file_size     BIGINT          NOT NULL,
   file_mtime    BIGINT          NOT NULL,
   images_root   VARCHAR(512)             DEFAULT NULL,
+  data_format   VARCHAR(16)     NOT NULL DEFAULT 'sharegpt',
   first_seen_at DATETIME        NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_ds_hash (dataset, source_hash),
@@ -91,6 +92,10 @@ _TEMPLATES = (DATASET_VERSION, SAMPLE_SOURCE, SAMPLE_TRANSLATION, DATASET_CURSOR
 _ADDED_COLUMNS = (
     ("sample_source", "source_lang", "VARCHAR(16) NOT NULL DEFAULT 'en' AFTER status"),
     ("sample_source", "category", "VARCHAR(64) NOT NULL DEFAULT '' AFTER source_lang"),
+    # CPT 语料和多模态数据集并排躺在 dataset_version 里，光看名字分不出来。
+    # 放在这张表而不是 sample_source：CPT 的行根本不进 sample_source，
+    # 而且这是数据集级别的属性，不是每行的。这张表只有一百多行，加列不要钱。
+    ("dataset_version", "data_format", "VARCHAR(16) NOT NULL DEFAULT 'sharegpt' AFTER images_root"),
 )
 
 # 索引同理：CREATE TABLE IF NOT EXISTS 不会给已有表补索引，而 MySQL 也没有

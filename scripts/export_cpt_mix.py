@@ -117,7 +117,9 @@ def main() -> int:
                 sys.exit(f"[FATAL] {name}: 要给 target_docs 或 target_tokens")
 
             print(f"\n=== {name} ===")
-            version = ledger.open_dataset(name, root, out_dir)
+            # 声明成 pt：CPT 语料和多模态数据集共用 dataset_version，
+            # 不标格式就只能靠名字认。
+            version = ledger.open_dataset(name, root, out_dir, data_format="pt")
             shards = sorted(p for p in root.rglob("*.parquet") if p.is_file())
             print(f"  {len(shards)} 个分片，水位线存在 dataset_cursor")
 

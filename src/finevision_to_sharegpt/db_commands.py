@@ -56,12 +56,24 @@ def run_db_status(config_path: Path | str, dataset: str | None = None) -> dict[s
     try:
         rows = ledger.status_counts(dataset)
         uncategorised = ledger.uncategorised_counts()
+        inventory = ledger.dataset_inventory()
     finally:
         ledger.close()
     totals: dict[str, int] = {}
     for row in rows:
         totals[row["status"]] = totals.get(row["status"], 0) + row["count"]
     result: dict[str, Any] = {"rows": rows, "totals": totals}
+    # 按格式分组，因为 CPT 语料在 sample_source 里一行都没有——只看上面的
+    # status 统计会以为库里只有多模态数据。
+    by_format: dict[str, list[str]] = {}
+    for item in inventory:
+        by_format.setdefault(item["data_format"], []).append(item["dataset"])
+    result["datasets_by_format"] = {k: sorted(v) for k, v in sorted(by_format.items())}
+    pt = [item for item in inventory if item["data_format"] == "pt"]
+    if pt:
+        result["pt_corpora"] = [
+            {"dataset": i["dataset"], "shards_tracked": i["shards_tracked"]} for i in pt
+        ]
     if uncategorised["rows"]:
         # 静默漏抽比报错难查得多，所以这条无论如何都放进输出。
         result["uncategorised"] = uncategorised
