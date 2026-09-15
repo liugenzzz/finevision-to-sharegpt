@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-09-15 · idx_category 漏了 dataset 列（收益会被回表吃掉），迁移改成按形状比对
+
+上一条加的 `idx_category (category, status, id)` **不够**，用户跑之前发现的。
+
+取候选的查询在配了 `max_share_per_dataset` 时是 `SELECT id, dataset`——封顶要按
+数据集分桶。而索引里没有 `dataset`，MySQL 得**每行回表**取那一列，百万级回表
+会把省下来的 filesort 又赔回去。
+
+改成 `(category, status, id, dataset)`。`id` 仍排在 `dataset` 前面，所以
+`ORDER BY id` 依然零成本，同时 `dataset` 落在索引叶子上。EXPLAIN 从
+`Using index condition` 变成 **`Using index`**（覆盖，不回表）。
+
+**顺带修了迁移的一个盲点**：原来只按索引**名字**判断存在与否。索引定义改过之后，
+老库里那个同名但列不对的索引会被当成「已经有了」而跳过——新定义永远生效不了。
+改成取出列名逐个比，形状不对就 DROP 再建。实测 `category,status,id` →
+`category,status,id,dataset` 会被正确重建。
+
+同一个坑对 `_ADDED_COLUMNS` 也存在（列存在但类型改了不会被发现），目前没有这种
+需求，先记着。
+
+**对另一侧的影响**：`db-init` 这次会 DROP 再建 `idx_category`。500 万行上很快，
+**但等 2500 万行进去之后重建就要几分钟且期间写入会慢**——所以索引定义有变动
+就趁早，别拖到全量灌库之后。
+
+`configs/mix_100w.json` 的 filter 同步换成 `category`。
+
+---
+
 ## 2026-09-14 · 给 Claude 2 的接口变更汇总（这一条是给你的，请整条读）
 
 前面几条分头记了细节，这条把**会影响到你那侧写法**的集中列出来。

@@ -175,10 +175,17 @@ class MySQLLedger(ConsumptionLedger):
                 if int(cursor.fetchone()[0]) == 0:
                     cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             for table, index, columns in schema.added_indexes():
-                query, params = schema.missing_index_query(table, index)
+                query, params = schema.index_columns_query(table, index)
                 cursor.execute(query, params)
-                if int(cursor.fetchone()[0]) == 0:
-                    cursor.execute(f"ALTER TABLE {table} ADD INDEX {index} {columns}")
+                existing = tuple(row[0] for row in cursor.fetchall())
+                if existing == columns:
+                    continue
+                if existing:
+                    # 同名但列不对——定义改过了，重建而不是当成已存在跳过。
+                    cursor.execute(f"ALTER TABLE {table} DROP INDEX {index}")
+                cursor.execute(
+                    f"ALTER TABLE {table} ADD INDEX {index} ({', '.join(columns)})"
+                )
 
         self.pool.run(create)
 

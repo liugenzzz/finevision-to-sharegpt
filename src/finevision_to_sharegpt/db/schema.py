@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS sample_source (
   PRIMARY KEY (id),
   UNIQUE KEY uk_ver_sample (version_id, sample_id(255)),
   KEY idx_pick (dataset, status, id),
-  KEY idx_category (category, status, id),
+  KEY idx_category (category, status, id, dataset),
   KEY idx_scan (version_id, parquet_name, row_index),
   KEY idx_batch (batch_id),
   KEY idx_expire (status, claim_expires_at)
@@ -95,17 +95,25 @@ _ADDED_COLUMNS = (
 
 # 索引同理：CREATE TABLE IF NOT EXISTS 不会给已有表补索引，而 MySQL 也没有
 # CREATE INDEX IF NOT EXISTS，只能先查 information_schema。
-# idx_category 是抽样的主力：按类别取候选时 (category, status, id) 是覆盖索引，
-# 一段连续扫描就够，不用像 dataset IN (...) 那样扫十几二十段再归并排序。
+# idx_category 是抽样的主力。带上 dataset 是因为封顶要按数据集分桶，取候选的
+# 查询是 `SELECT id, dataset`——少这一列就得每行回表，百万级回表会把收益吃光。
+# id 排在 dataset 前面，所以 ORDER BY id 仍然是零成本。
 _ADDED_INDEXES = (
-    ("sample_source", "idx_category", "(category, status, id)"),
+    ("sample_source", "idx_category", ("category", "status", "id", "dataset")),
 )
 
 
-def missing_index_query(table: str, index: str) -> tuple[str, tuple[str, str]]:
+def index_columns_query(table: str, index: str) -> tuple[str, tuple[str, str]]:
+    """索引现有的列，按顺序。
+
+    只按名字判断存在与否是不够的：索引定义改过之后，老库里那个同名索引列不对，
+    却会被当成「已经有了」而跳过。这里取出列名逐个比，形状不对就重建。
+    """
+
     return (
-        "SELECT COUNT(*) FROM information_schema.STATISTICS "
-        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s",
+        "SELECT COLUMN_NAME FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s "
+        "ORDER BY SEQ_IN_INDEX",
         (table, index),
     )
 
