@@ -4,6 +4,68 @@
 
 ---
 
+## 2026-09-15 · images_root 改成 fv_images 打坏了 backfill 的数据集归属
+
+**动了**：`src/finevision_to_sharegpt/zip_pipeline.py`、
+`tests/test_zip_pipeline_startup.py`
+
+**为什么**：核 Claude 1「给 Claude 2 的接口变更汇总」时发现的。三条逐个核过，
+只有 `images_root` 这条真打坏了东西。
+
+`_dataset_safe_name_of_record` 从记录的图片路径倒推数据集名，原来的判据是
+**第一段等于当前 `images_root` 的目录名**：
+
+```python
+if len(parts) >= 3 and parts[0] == images_dir:   # images_dir = config.images_root.name
+    return parts[1]
+```
+
+`images_root` 从 `.../images` 改成 `.../fv_images` 的那一刻，所有
+`images/<数据集>/…` 的历史记录一律返回 `None`：
+
+```
+历史记录 images/           → None
+新记录 fv_images/          → 'okvqa'
+```
+
+**改法**：不看第一段了，数据集名**永远是倒数第二段**（路径形状是
+`<前缀>/<数据集>/<sha256>.<ext>`，见 `ImageStore.relative_path`）。前缀是会变的，
+位置不会。调用方本来就会核对名字在不在本次选中的数据集里，所以放宽不会把
+记录写进别人的文件——这一条单独有测试钉着。
+
+**影响面（据实说，别夸大）**：`_write_record` 一直是同时往合并文件和分数据集
+文件写的，而且**不经过图片前缀**，所以正常写入的记录不受影响。受影响的只有
+backfill 要迁移的**历史记录**（分数据集拆分之前产出的那些）。真有这类记录时，
+后果是两条：① 它们永远进不了分数据集文件，而 `db-restore` 正是读那些文件重建
+账本的；② `_backfill_is_needed` 的字节数判据永远凑不齐，于是每次重启又整读一遍
+产出——「重启快起来」那次改动被悄悄抵消。
+
+**另外两条核完无事**：
+- `open_dataset` 的两个调用点（`zip_pipeline.py:309`、`db_commands.py:236`）
+  都已经传 `dataset.source_lang`。
+- 我这侧的脚本（`measure_sample_size` / `bench_backend` / `plan_sampling` /
+  `probe_dataset` / `register_datasets` / `survey_roots`）**一个都不连库**，
+  所以 `ensure_schema=False` 那条约定对我暂时没有落点；以后写连库脚本会照做。
+  `db_inventory.py` 走的是 `ConnectionPool` + `pool.run()`，你已经核过不受影响。
+- 我这侧没有任何地方假设 `images_root` 是相对路径。
+
+**对另一侧的影响**：`_dataset_safe_name_of_record` 少了一个参数
+（`images_dir` 去掉了），它是模块私有函数，仓库里只有 `_backfill_dataset_jsonls`
+一个调用点，已经跟上。**顺带一个好处**：以后再改 `images_root`，这条路径不会
+再跟着坏——你不必为它单独通知我。
+
+**验证**：`pytest -q` → 277 passed / 27 skipped；`ruff --select F,E9` 干净。
+变异测试：把前缀比对加回去（`parts[0] != 'fv_images'` 就返回 None），三条测试
+当场红，其中包括原有的 `test_startup_still_wires_the_backfill_when_it_is_needed`。
+
+**还欠着的**（上一轮查出来、用户还没拍板的）：`totals["datasets"][name]` 是
+数据集整个跑完才注册的，所以完成回调在数据集自己跑的时候查不到它的统计字典。
+后果是 `report_path` 里的**分数据集** `written`/`failed` 偏小且不稳定（实测同一份
+数据能报 1、6 或 20，取决于结果回来得多晚）。**总计和配额都是准的**，我验过三档
+滞后量，实际产出都精确等于 limit。要修得同时改注册时机和 `limit_reached` 的判据，
+否则中文样本会被数两遍、配额砍半。
+
+
 ## 2026-09-08 · 续跑不再为了丢掉一行而先把它解码出来（35 分钟 → 3 秒）
 
 **动了**：`src/finevision_to_sharegpt/parquet_reader.py`、`zip_pipeline.py`、
