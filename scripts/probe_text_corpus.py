@@ -57,6 +57,28 @@ def probe_parquet(files: list[Path], rows: int, chars: int) -> None:
         hint = "   <- 像正文" if name.lower() in TEXT_HINTS else ""
         print(f"    {name:<28}{str(field.type):<24}{hint}")
 
+    # 篇长统计：估 token 要的是均值和分位数，一行样例看不出来。
+    # 只读第一个分片的前几个 row group，够用且不用扫 1700 个文件。
+    text_col = next((n for n in schema.names if n.lower() in TEXT_HINTS), None)
+    if text_col:
+        lengths: list[int] = []
+        for group in range(min(4, first.num_row_groups)):
+            column = first.read_row_group(group, columns=[text_col])[text_col]
+            lengths.extend(len(str(v)) for v in column.to_pylist() if v is not None)
+        if lengths:
+            lengths.sort()
+            n = len(lengths)
+            mean = sum(lengths) / n
+            print(f"\n  `{text_col}` 篇长（抽样 {n:,} 行）：")
+            print(f"    平均 {mean:>9,.0f} 字符")
+            for label, q in (("中位数", 0.5), ("P90", 0.9), ("P99", 0.99)):
+                print(f"    {label:<7}{lengths[min(n - 1, int(n * q))]:>9,} 字符")
+            print(f"    最短 {lengths[0]:,} / 最长 {lengths[-1]:,}")
+            print("\n  按均值估 token（中文约 1.2~1.6 字符/token，英文约 4）：")
+            for cpt in (1.2, 1.6, 4.0):
+                print(f"    {cpt} 字符/token → 每篇 {mean / cpt:>7,.0f} tokens"
+                      f"，500 万条 ≈ {5e6 * mean / cpt / 1e8:>7.1f} 亿")
+
     print(f"\n  前 {rows} 行：")
     table = first.read_row_group(0) if first.num_row_groups else None
     if table is None:
